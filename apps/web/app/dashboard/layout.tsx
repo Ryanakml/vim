@@ -1,4 +1,4 @@
-// app/dashboard/layout.tsx
+// import { OrganizationGuard } from "@/components/organization-guard";
 import { AppSidebar } from "@/components/app-sidebar";
 import { DynamicBreadcrumb } from "@/components/dynamic-breadcrumb";
 import { Separator } from "@workspace/ui/components/separator";
@@ -14,6 +14,7 @@ export default function DashboardLayout({
   children: React.ReactNode;
 }) {
   return (
+    // <OrganizationGuard>
     <SidebarProvider>
       <AppSidebar />
       <SidebarInset className="h-svh overflow-hidden flex flex-col">
@@ -26,5 +27,6 @@ export default function DashboardLayout({
         <div className="flex flex-1 flex-col overflow-hidden">{children}</div>
       </SidebarInset>
     </SidebarProvider>
+    // </OrganizationGuard>
   );
 }

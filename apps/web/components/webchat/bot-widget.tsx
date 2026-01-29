@@ -85,7 +85,7 @@ export function BotWidget({ className }: BotWidgetProps) {
         {
           id: (Date.now() + 1).toString(),
           role: "bot",
-          content: "This is a simulated response from the bot emulator.",
+          content: "Testing answer from bot!",
           timestamp: new Date(),
         },
       ]);

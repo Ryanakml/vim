@@ -1,6 +1,18 @@
 "use client";
 
-import React, { createContext, useContext, useState, ReactNode } from "react";
+import React, {
+  createContext,
+  useContext,
+  useState,
+  ReactNode,
+  useEffect,
+} from "react";
+import {
+  useBotProfile,
+  useEnsureBotProfile,
+  useUpdateBotProfile,
+  type BotProfile,
+} from "@/lib/convex-client";
 
 interface WebchatContextType {
   // Profile settings
@@ -34,11 +46,25 @@ interface WebchatContextType {
   setEnableSound: (value: boolean) => void;
   historyReset: string;
   setHistoryReset: (value: string) => void;
+  // Loading and error states
+  isLoading: boolean;
+  error: Error | null;
+  // Save function
+  saveProfile: () => Promise<void>;
 }
 
 const WebchatContext = createContext<WebchatContextType | undefined>(undefined);
 
 export function WebchatProvider({ children }: { children: ReactNode }) {
+  // Convex hooks
+  const botProfile = useBotProfile();
+  const updateBotProfile = useUpdateBotProfile();
+  const ensureBotProfile = useEnsureBotProfile();
+
+  // Loading and error state
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<Error | null>(null);
+
   // Profile settings
   const [displayName, setDisplayName] = useState("");
   const [description, setDescription] = useState("");
@@ -60,6 +86,72 @@ export function WebchatProvider({ children }: { children: ReactNode }) {
   const [enableFileUpload, setEnableFileUpload] = useState(false);
   const [enableSound, setEnableSound] = useState(false);
   const [historyReset, setHistoryReset] = useState("never");
+
+  // On mount: ensure bot profile exists
+  useEffect(() => {
+    const initProfile = async () => {
+      try {
+        setIsLoading(true);
+        await ensureBotProfile();
+      } catch (err) {
+        setError(
+          err instanceof Error ? err : new Error("Failed to load profile"),
+        );
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    initProfile();
+  }, [ensureBotProfile]);
+
+  // Update local state when botProfile is loaded from Convex
+  useEffect(() => {
+    if (botProfile) {
+      setDisplayName(botProfile.bot_names);
+      setDescription(botProfile.bot_description);
+      setPlaceholder(botProfile.msg_placeholder);
+      setPrimaryColor(botProfile.primary_color);
+      setAvatarUrl(botProfile.avatar_url);
+      setFont(botProfile.font);
+      setThemeMode(botProfile.theme_mode as "light" | "dark");
+      setHeaderStyle(botProfile.header_style as "basic" | "branded");
+      setMessageStyle(botProfile.message_style as "filled" | "outlined");
+      setCornerRadius(botProfile.corner_radius);
+      setEnableFeedback(botProfile.enable_feedback);
+      setEnableFileUpload(botProfile.enable_file_upload);
+      setEnableSound(botProfile.enable_sound);
+      setHistoryReset(botProfile.history_reset);
+    }
+  }, [botProfile]);
+
+  // Save profile to Convex
+  const saveProfile = async () => {
+    if (!botProfile) throw new Error("Profile not loaded");
+    try {
+      await updateBotProfile({
+        id: botProfile._id,
+        bot_names: displayName,
+        bot_description: description,
+        msg_placeholder: placeholder,
+        primary_color: primaryColor,
+        avatar_url: avatarUrl,
+        font,
+        theme_mode: themeMode,
+        header_style: headerStyle,
+        message_style: messageStyle,
+        corner_radius: cornerRadius,
+        enable_feedback: enableFeedback,
+        enable_file_upload: enableFileUpload,
+        enable_sound: enableSound,
+        history_reset: historyReset,
+      });
+    } catch (err) {
+      const error =
+        err instanceof Error ? err : new Error("Failed to save profile");
+      setError(error);
+      throw error;
+    }
+  };
 
   const value: WebchatContextType = {
     displayName,
@@ -90,6 +182,9 @@ export function WebchatProvider({ children }: { children: ReactNode }) {
     setEnableSound,
     historyReset,
     setHistoryReset,
+    isLoading,
+    error,
+    saveProfile,
   };
 
   return (

@@ -10,7 +10,7 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
-import { ChevronRight, ArrowRightLeft } from "lucide-react";
+import { ChevronRight, ArrowRightLeft, Loader2 } from "lucide-react";
 import { Button } from "@workspace/ui/components/button";
 import {
   Card,
@@ -21,6 +21,7 @@ import {
 import { Avatar, AvatarFallback } from "@workspace/ui/components/avatar";
 import { useRouter } from "next/navigation";
 import { cn } from "@workspace/ui/lib/utils";
+import { useDashboardStats } from "@/lib/convex-client";
 
 // --- 1. MOCK DATA ---
 
@@ -100,6 +101,27 @@ export default function OverviewPage() {
     "overview",
   );
 
+  // Fetch real dashboard statistics
+  const dashboardStats = useDashboardStats();
+
+  // Loading state
+  if (dashboardStats === undefined) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-[#09090b] text-zinc-100">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+          <p className="text-sm text-zinc-400">Loading dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Use real data or fallback to empty
+  const totalUsers = dashboardStats?.totalUsers ?? 0;
+  const totalConversations = dashboardStats?.totalConversations ?? 0;
+  const activeConversations = dashboardStats?.activeConversations ?? 0;
+  const latestConversations = dashboardStats?.latestConversations ?? [];
+
   return (
     <div className="flex h-full w-full flex-col bg-[#09090b] text-zinc-100 p-8 space-y-8 overflow-y-auto transition-colors duration-500">
       {/* --- HEADER --- */}
@@ -132,22 +154,18 @@ export default function OverviewPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* --- LEFT COLUMN (BIG CHART) --- */}
         <div className="lg:col-span-2 space-y-8">
-          {/* 1. KPI CARDS (Static for now, or can change based on viewMode if needed) */}
+          {/* 1. KPI CARDS (Real Data) */}
           <div className="grid grid-cols-3 gap-4">
             <KpiCard
-              title="Messages"
-              value={KPI_STATS.messages.value}
-              subtext={KPI_STATS.messages.trend}
+              title="Conversations"
+              value={totalConversations}
+              subtext={`${activeConversations} active`}
             />
-            <KpiCard
-              title="Users"
-              value={KPI_STATS.users.value}
-              subtext={KPI_STATS.users.trend}
-            />
+            <KpiCard title="Users" value={totalUsers} subtext="Total users" />
             <KpiCard
               title="Active Conversations"
-              value={KPI_STATS.activeConvs.value}
-              subtext={KPI_STATS.activeConvs.trend}
+              value={activeConversations}
+              subtext={`${((activeConversations / totalConversations) * 100 || 0).toFixed(0)}% of total`}
             />
           </div>
 
@@ -270,7 +288,7 @@ export default function OverviewPage() {
 
         {/* --- RIGHT COLUMN (Sidebar) --- */}
         <div className="flex flex-col gap-8">
-          {/* 1. RECENT CONVERSATIONS (Static) */}
+          {/* 1. RECENT CONVERSATIONS (Real Data) */}
           <Card className="bg-[#09090b] border-zinc-800 text-zinc-100 shadow-sm flex-1">
             <CardHeader className="flex flex-row items-center justify-between pb-2 border-b border-zinc-800/50">
               <CardTitle className="text-sm font-medium text-zinc-200">
@@ -280,44 +298,56 @@ export default function OverviewPage() {
             </CardHeader>
             <CardContent className="p-0">
               <div className="divide-y divide-zinc-800/50">
-                {RECENT_CONVERSATIONS.map((conv) => (
-                  <div
-                    key={conv.id}
-                    className="flex items-center gap-3 p-4 hover:bg-zinc-800/30 transition-colors cursor-pointer group"
-                    onClick={() =>
-                      router.push("/dashboard/monitor/conversations")
-                    }
-                  >
-                    <Avatar className="h-9 w-9 border border-zinc-800">
-                      <AvatarFallback
-                        className={cn(
-                          "text-white text-xs font-semibold",
-                          conv.avatarColor,
-                        )}
-                      >
-                        A
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex justify-between items-baseline">
-                        <span className="text-sm font-medium text-zinc-200 truncate">
-                          {conv.userName}
-                        </span>
-                        <span className="text-[10px] text-zinc-500 ml-2 shrink-0">
-                          {conv.timestamp}
-                        </span>
+                {latestConversations.length > 0 ? (
+                  latestConversations.map((conv) => (
+                    <div
+                      key={conv._id}
+                      className="flex items-center gap-3 p-4 hover:bg-zinc-800/30 transition-colors cursor-pointer group"
+                      onClick={() =>
+                        router.push("/dashboard/monitor/conversations")
+                      }
+                    >
+                      <Avatar className="h-9 w-9 border border-zinc-800">
+                        <AvatarFallback className="text-white text-xs font-semibold bg-blue-600">
+                          {conv.user?.name?.[0]?.toUpperCase() || "U"}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex justify-between items-baseline">
+                          <span className="text-sm font-medium text-zinc-200 truncate">
+                            {conv.user?.name || "Anonymous User"}
+                          </span>
+                          <span className="text-[10px] text-zinc-500 ml-2 shrink-0">
+                            {conv.last_message_at
+                              ? new Date(
+                                  conv.last_message_at,
+                                ).toLocaleTimeString("en-US", {
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                  hour12: true,
+                                })
+                              : "—"}
+                          </span>
+                        </div>
+                        <p className="text-xs text-zinc-500 truncate group-hover:text-zinc-400 transition-colors">
+                          {conv.topic || "No topic"}
+                        </p>
                       </div>
-                      <p className="text-xs text-zinc-500 truncate group-hover:text-zinc-400 transition-colors">
-                        {conv.lastMessage}
-                      </p>
                     </div>
+                  ))
+                ) : (
+                  <div className="p-8 text-center text-zinc-500">
+                    <p className="text-sm">No conversations yet</p>
                   </div>
-                ))}
+                )}
               </div>
               <div className="p-3 border-t border-zinc-800/50">
                 <Button
                   variant="ghost"
                   className="w-full text-xs text-zinc-500 hover:text-zinc-300 h-8"
+                  onClick={() =>
+                    router.push("/dashboard/monitor/conversations")
+                  }
                 >
                   View all conversations
                 </Button>

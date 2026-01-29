@@ -9,6 +9,7 @@ import {
   Filter,
   User,
   ExternalLink,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
@@ -17,101 +18,53 @@ import { Separator } from "@workspace/ui/components/separator";
 import { ScrollArea } from "@workspace/ui/components/scroll-area";
 import { Avatar, AvatarFallback } from "@workspace/ui/components/avatar";
 import { cn } from "@workspace/ui/lib/utils";
-
-// --- 1. STRUKTUR DATA (Mirip API Backend) ---
-// Kita definisikan tipe datanya dulu biar konsisten nanti pas connect API
-interface Message {
-  id: string;
-  role: "user" | "bot";
-  content: string;
-  timestamp: string;
-}
-
-interface Conversation {
-  id: string;
-  shortId: string;
-  userName: string;
-  userAvatarColor: string; // Utk simulasi warna avatar beda2
-  topic: string;
-  lastActive: string;
-  integration: "Webchat" | "Whatsapp" | "Telegram";
-  dateCreated: string;
-  status: "Active" | "Closed";
-  tags: string[];
-  messages: Message[];
-}
-
-// --- 2. MOCK DATA (Hardcoded buat Preview UI) ---
-const MOCK_CONVERSATIONS: Conversation[] = [
-  {
-    id: "conv_01KFYJ8WQKZ...",
-    shortId: "conv_01KFY...",
-    userName: "Anonymous User",
-    userAvatarColor: "bg-pink-600",
-    topic: "Conversation Topic Unknown",
-    lastActive: "Tue, Jan 27, 4:14 PM",
-    integration: "Webchat",
-    dateCreated: "Tue, Jan 27, 8:49 AM",
-    status: "Active",
-    tags: [
-      "conversation-insights#message_count 2",
-      "conversation-insights#participant_count 1",
-      "webchat:owner user_01KFY...",
-    ],
-    messages: [
-      { id: "m1", role: "user", content: "hi", timestamp: "4:14 PM" },
-      {
-        id: "m2",
-        role: "bot",
-        content: "Hello! How can I assist you today?",
-        timestamp: "4:14 PM",
-      },
-    ],
-  },
-  {
-    id: "conv_02ABC...",
-    shortId: "conv_02ABC...",
-    userName: "Anonymous User",
-    userAvatarColor: "bg-purple-600",
-    topic: "Asking about pricing",
-    lastActive: "Tue, Jan 27, 9:20 AM",
-    integration: "Webchat",
-    dateCreated: "Tue, Jan 27, 9:00 AM",
-    status: "Active",
-    tags: ["pricing", "leads"],
-    messages: [
-      {
-        id: "m3",
-        role: "user",
-        content: "How much is the pro plan?",
-        timestamp: "9:20 AM",
-      },
-    ],
-  },
-  {
-    id: "conv_03XYZ...",
-    shortId: "conv_03XYZ...",
-    userName: "Anonymous User",
-    userAvatarColor: "bg-blue-600",
-    topic: "Conversation Topic Unknown",
-    lastActive: "Tue, Jan 27, 8:35 AM",
-    integration: "Webchat",
-    dateCreated: "Tue, Jan 27, 8:30 AM",
-    status: "Closed",
-    tags: [],
-    messages: [],
-  },
-];
+import { useConversations, useBotProfile } from "@/lib/convex-client";
 
 export default function ConversationsPage() {
-  const [selectedId, setSelectedId] = useState<string>(
-    MOCK_CONVERSATIONS[0]!.id,
+  // Get bot profile and conversations
+  const botProfile = useBotProfile();
+  const conversations = useConversations(botProfile?._id);
+
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+
+  // Loading state
+  if (!botProfile || conversations === undefined) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-[#09090b] text-zinc-100">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+          <p className="text-sm text-zinc-400">Loading conversations...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Empty state
+  if (conversations === null || conversations.length === 0) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-[#09090b] text-zinc-100">
+        <div className="flex flex-col items-center gap-3">
+          <p className="text-lg font-medium">No conversations yet</p>
+          <p className="text-sm text-zinc-400">
+            Conversations will appear here when users chat with your bot
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Filter conversations based on search query
+  const filteredConversations = conversations.filter(
+    (conv) =>
+      conv.topic?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      conv.user?.name?.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
-  // Cari conversation yang lagi dipilih
-  const selectedConversation = MOCK_CONVERSATIONS.find(
-    (c) => c.id === selectedId,
-  );
+  // Get selected conversation
+  const selectedConversation = selectedId
+    ? filteredConversations.find((c) => c._id === selectedId)
+    : filteredConversations[0];
 
   return (
     // Layout Utama: Flex Row (Sidebar Kiri + Main Content Kanan)
@@ -131,6 +84,19 @@ export default function ConversationsPage() {
           </Button>
         </div>
 
+        {/* Search Input */}
+        <div className="p-3 border-b border-zinc-800/50">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-zinc-500" />
+            <Input
+              placeholder="Search conversations..."
+              className="pl-8 h-9 bg-zinc-800 border-zinc-700 text-sm text-zinc-100 placeholder:text-zinc-500"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+        </div>
+
         {/* Filter Bar */}
         <div className="p-3">
           <Button
@@ -145,26 +111,21 @@ export default function ConversationsPage() {
         {/* Conversation List */}
         <ScrollArea className="flex-1">
           <div className="flex flex-col">
-            {MOCK_CONVERSATIONS.map((conv) => (
+            {filteredConversations.map((conv) => (
               <div
-                key={conv.id}
-                onClick={() => setSelectedId(conv.id)}
+                key={conv._id}
+                onClick={() => setSelectedId(conv._id)}
                 className={cn(
                   "flex items-start gap-3 p-4 cursor-pointer border-l-2 transition-all hover:bg-zinc-800/50",
-                  selectedId === conv.id
+                  selectedId === conv._id
                     ? "bg-zinc-800/60 border-blue-500" // Active State
                     : "border-transparent",
                 )}
               >
                 {/* Avatar */}
                 <Avatar className="h-10 w-10 mt-1">
-                  <AvatarFallback
-                    className={cn(
-                      "text-white text-xs font-semibold",
-                      conv.userAvatarColor,
-                    )}
-                  >
-                    A
+                  <AvatarFallback className="text-white text-xs font-semibold bg-blue-600">
+                    {conv.user?.name?.[0]?.toUpperCase() || "U"}
                   </AvatarFallback>
                 </Avatar>
 
@@ -172,14 +133,24 @@ export default function ConversationsPage() {
                 <div className="flex-1 overflow-hidden">
                   <div className="flex justify-between items-center mb-0.5">
                     <span className="font-semibold text-sm truncate text-zinc-200">
-                      {conv.userName}
+                      {conv.user?.name || "Anonymous"}
                     </span>
                     <span className="text-[10px] text-zinc-500">
-                      {conv.lastActive.split(",")[2]?.trim() || "Just now"}
+                      {conv.last_message_at
+                        ? new Date(conv.last_message_at).toLocaleDateString(
+                            "en-US",
+                            {
+                              month: "short",
+                              day: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            },
+                          )
+                        : "Just now"}
                     </span>
                   </div>
                   <p className="text-xs text-zinc-500 truncate mb-1">
-                    {conv.topic}
+                    {conv.topic || "No topic"}
                   </p>
                 </div>
 
@@ -199,10 +170,10 @@ export default function ConversationsPage() {
             <header className="flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-[#09090b]">
               <div className="flex flex-col gap-1">
                 <h1 className="text-lg font-bold text-white flex items-center gap-2">
-                  {selectedConversation.topic}
+                  {selectedConversation.topic || "No topic"}
                 </h1>
                 <span className="text-xs text-zinc-500">
-                  {selectedConversation.messages.length} Messages
+                  {selectedConversation.messageCount || 0} Messages
                 </span>
               </div>
               <Button
@@ -223,16 +194,12 @@ export default function ConversationsPage() {
                     Participants
                   </span>
                   <div className="flex items-center gap-2">
-                    <span
-                      className={cn(
-                        "px-1.5 py-0.5 rounded text-[10px] font-bold text-white",
-                        selectedConversation.userAvatarColor,
-                      )}
-                    >
-                      A
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold text-white bg-blue-600">
+                      {selectedConversation.user?.name?.[0]?.toUpperCase() ||
+                        "U"}
                     </span>
                     <span className="text-zinc-300">
-                      {selectedConversation.userName}
+                      {selectedConversation.user?.name || "Anonymous"}
                     </span>
                   </div>
                 </div>
@@ -243,29 +210,54 @@ export default function ConversationsPage() {
                     Last Activity
                   </span>
                   <span className="text-zinc-300 block">
-                    {selectedConversation.lastActive}
+                    {selectedConversation.last_message_at
+                      ? new Date(
+                          selectedConversation.last_message_at,
+                        ).toLocaleDateString("en-US", {
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })
+                      : "Never"}
                   </span>
                 </div>
 
-                {/* Col 3: Integration */}
+                {/* Col 3: Status */}
                 <div className="space-y-2">
                   <span className="text-zinc-500 text-xs font-medium block">
-                    Integration
+                    Status
                   </span>
-                  <div className="flex items-center gap-2 text-zinc-300">
-                    <Share2 className="h-3 w-3" />{" "}
-                    {/* Icon placeholder for integration */}
-                    {selectedConversation.integration}
-                  </div>
+                  <Badge
+                    className={cn(
+                      "text-[10px] font-medium",
+                      selectedConversation.status === "active"
+                        ? "bg-green-600 text-white hover:bg-green-700"
+                        : selectedConversation.status === "paused"
+                          ? "bg-yellow-600 text-white hover:bg-yellow-700"
+                          : "bg-zinc-700 text-white hover:bg-zinc-600",
+                    )}
+                  >
+                    {selectedConversation.status || "closed"}
+                  </Badge>
                 </div>
 
-                {/* Col 4: Date Created */}
+                {/* Col 4: Created */}
                 <div className="space-y-2">
                   <span className="text-zinc-500 text-xs font-medium block">
-                    Date Created
+                    Created At
                   </span>
                   <span className="text-zinc-300 block">
-                    {selectedConversation.dateCreated}
+                    {selectedConversation.created_at
+                      ? new Date(
+                          selectedConversation.created_at,
+                        ).toLocaleDateString("en-US", {
+                          year: "numeric",
+                          month: "short",
+                          day: "numeric",
+                        })
+                      : "—"}
                   </span>
                 </div>
 
@@ -277,49 +269,22 @@ export default function ConversationsPage() {
                   <div className="flex items-center gap-1 text-zinc-400 group cursor-pointer hover:text-zinc-200">
                     <ExternalLink className="h-3 w-3" />
                     <span className="truncate max-w-[100px] underline decoration-zinc-700 underline-offset-2">
-                      {selectedConversation.id}
+                      {selectedConversation._id}
                     </span>
                   </div>
                 </div>
               </div>
 
-              {/* Status & Tags Row */}
+              {/* Tags Row */}
               <div className="mt-6 space-y-3">
-                <div>
-                  <span className="text-zinc-500 text-xs font-medium block mb-2">
-                    Status
-                  </span>
-                  <Badge
-                    className={cn(
-                      "rounded-md px-2 py-0.5 text-xs font-medium",
-                      selectedConversation.status === "Active"
-                        ? "bg-blue-600/20 text-blue-400 hover:bg-blue-600/30"
-                        : "bg-zinc-800 text-zinc-400",
-                    )}
-                  >
-                    {selectedConversation.status}
-                  </Badge>
-                </div>
-
                 <div>
                   <span className="text-zinc-500 text-xs font-medium block mb-2">
                     Tags
                   </span>
                   <div className="flex flex-wrap gap-2">
-                    {selectedConversation.tags.length > 0 ? (
-                      selectedConversation.tags.map((tag, i) => (
-                        <span
-                          key={i}
-                          className="inline-flex items-center px-2 py-1 rounded-md text-[11px] font-medium bg-zinc-800 text-zinc-300 border border-zinc-700/50"
-                        >
-                          {tag}
-                        </span>
-                      ))
-                    ) : (
-                      <span className="text-zinc-600 text-xs italic">
-                        No tags
-                      </span>
-                    )}
+                    <span className="text-zinc-600 text-xs italic">
+                      No tags
+                    </span>
                   </div>
                 </div>
               </div>
@@ -335,52 +300,16 @@ export default function ConversationsPage() {
                 <div className="h-[1px] bg-zinc-700 w-full" />
               </div>
 
-              <div className="space-y-6">
-                {selectedConversation.messages.map((msg) => (
-                  <div
-                    key={msg.id}
-                    className={cn(
-                      "flex w-full",
-                      msg.role === "user" ? "justify-start" : "justify-end",
-                    )}
-                  >
-                    <div
-                      className={cn(
-                        "flex gap-3 max-w-[80%]",
-                        msg.role === "bot" && "flex-row-reverse",
-                      )}
-                    >
-                      {/* Avatar */}
-                      {msg.role === "user" ? (
-                        <div
-                          className={cn(
-                            "h-8 w-8 rounded-full flex items-center justify-center text-[10px] text-white font-bold shrink-0",
-                            selectedConversation.userAvatarColor,
-                          )}
-                        >
-                          A
-                        </div>
-                      ) : (
-                        // Bot Avatar (Kotak Biru standard lo)
-                        <div className="h-8 w-8 rounded bg-blue-600 flex items-center justify-center text-white shrink-0">
-                          <span className="text-[10px] font-bold">B</span>
-                        </div>
-                      )}
-
-                      {/* Bubble */}
-                      <div
-                        className={cn(
-                          "px-4 py-2 rounded-lg text-sm leading-relaxed",
-                          msg.role === "user"
-                            ? "bg-zinc-800 text-zinc-200 rounded-tl-none"
-                            : "bg-blue-600 text-white rounded-tr-none",
-                        )}
-                      >
-                        {msg.content}
-                      </div>
-                    </div>
-                  </div>
-                ))}
+              <div className="space-y-6 text-sm text-zinc-300">
+                <p className="text-center text-zinc-500 py-8">
+                  Message history loaded from Convex backend.
+                  {selectedConversation.messageCount && (
+                    <span className="block mt-2">
+                      {selectedConversation.messageCount} messages in this
+                      conversation
+                    </span>
+                  )}
+                </p>
               </div>
             </div>
           </>

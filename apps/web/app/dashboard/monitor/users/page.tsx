@@ -3,10 +3,10 @@
 import { useState } from "react";
 import {
   Search,
-  Filter,
   User as UserIcon,
   MoreHorizontal,
   ArrowUpDown,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
@@ -16,57 +16,45 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@workspace/ui/components/dropdown-menu";
-import { cn } from "@workspace/ui/lib/utils";
-
-// --- 1. STRUKTUR DATA (Kontrak API) ---
-interface UserProfile {
-  id: string;
-  identifier: string; // ID panjang yang tampil di tabel
-  name: string;
-  avatarColor: string; // Simulasi warna avatar
-  tags: string[];
-  lastModified: string;
-}
-
-// --- 2. MOCK DATA (Hardcoded buat Preview UI) ---
-const MOCK_USERS: UserProfile[] = [
-  {
-    id: "u1",
-    identifier: "user_01KFYJ8WPX4RR360QRXHPFJNT3",
-    name: "Unknown User",
-    avatarColor: "bg-red-900/50 text-red-500", // Merah tua transparan kayak di gambar
-    tags: [],
-    lastModified: "12 hours ago",
-  },
-  {
-    id: "u2",
-    identifier: "user_01KFYHEAE9M97CXSYY5ZJBCS05",
-    name: "Unknown User",
-    avatarColor: "bg-red-900/50 text-red-500",
-    tags: [],
-    lastModified: "12 hours ago",
-  },
-  // Uncomment object di bawah ini buat nambah variasi data mock
-  /*
-  {
-    id: "u3",
-    identifier: "user_02ABCDE...",
-    name: "John Doe",
-    avatarColor: "bg-blue-900/50 text-blue-500",
-    tags: ["vip", "lead"],
-    lastModified: "2 days ago",
-  },
-  */
-];
+import { useUsers } from "@/lib/convex-client";
 
 export default function UsersPage() {
   const [searchQuery, setSearchQuery] = useState("");
 
-  // Filter logic simpel (opsional, biar search barnya 'hidup' dikit)
-  const filteredUsers = MOCK_USERS.filter(
+  // Get users from Convex
+  const users = useUsers();
+
+  // Loading state
+  if (users === undefined) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-[#09090b] text-zinc-100">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-8 w-8 animate-spin text-blue-600" />
+          <p className="text-sm text-zinc-400">Loading users...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Empty state
+  if (users === null || users.length === 0) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-[#09090b] text-zinc-100">
+        <div className="flex flex-col items-center gap-3">
+          <p className="text-lg font-medium">No users yet</p>
+          <p className="text-sm text-zinc-400">
+            Users will appear here when they interact with your bot
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  // Filter users based on search query
+  const filteredUsers = users.filter(
     (user) =>
-      user.identifier.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      user.name.toLowerCase().includes(searchQuery.toLowerCase()),
+      user.identifier?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      user.name?.toLowerCase().includes(searchQuery.toLowerCase()),
   );
 
   return (
@@ -115,19 +103,16 @@ export default function UsersPage() {
           <div className="divide-y divide-zinc-800/50">
             {filteredUsers.map((user) => (
               <div
-                key={user.id}
+                key={user._id}
                 className="grid grid-cols-12 gap-4 px-6 py-4 items-center hover:bg-zinc-900/40 transition-colors group"
               >
                 {/* Column 1: Identifier */}
                 <div className="col-span-5 flex items-center gap-3 overflow-hidden">
-                  {/* Avatar Box (Merah Kotak) */}
-                  <div
-                    className={cn(
-                      "h-8 w-8 rounded-md flex items-center justify-center shrink-0 border border-white/5",
-                      user.avatarColor,
-                    )}
-                  >
-                    <span className="text-xs font-bold">U</span>
+                  {/* Avatar Box */}
+                  <div className="h-8 w-8 rounded-md flex items-center justify-center shrink-0 border border-white/5 bg-blue-600">
+                    <span className="text-xs font-bold text-white">
+                      {user.name?.[0]?.toUpperCase() || "U"}
+                    </span>
                   </div>
 
                   {/* Icon + ID Text */}
@@ -142,34 +127,31 @@ export default function UsersPage() {
                 {/* Column 2: Name */}
                 <div className="col-span-3">
                   <span className="text-sm text-zinc-400 font-medium">
-                    {user.name}
+                    {user.name || "Unknown User"}
                   </span>
                 </div>
 
                 {/* Column 3: Tags */}
                 <div className="col-span-2">
-                  {user.tags.length > 0 ? (
-                    <div className="flex gap-2">
-                      {user.tags.map((tag) => (
-                        <span
-                          key={tag}
-                          className="px-2 py-0.5 rounded text-[10px] bg-zinc-800 text-zinc-300 border border-zinc-700"
-                        >
-                          {tag}
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <span className="text-sm text-zinc-500 font-medium">
-                      No tags
-                    </span>
-                  )}
+                  <span className="text-sm text-zinc-500 font-medium">
+                    No tags
+                  </span>
                 </div>
 
-                {/* Column 4: Last Modified */}
+                {/* Column 4: Last Active */}
                 <div className="col-span-2 flex items-center justify-end gap-4">
                   <span className="text-sm text-zinc-500">
-                    {user.lastModified}
+                    {user.last_active_at
+                      ? new Date(user.last_active_at).toLocaleDateString(
+                          "en-US",
+                          {
+                            month: "short",
+                            day: "numeric",
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          },
+                        )
+                      : "Never"}
                   </span>
 
                   {/* Action Menu (Hidden by default, show on hover) */}
@@ -209,7 +191,7 @@ export default function UsersPage() {
               No users found
             </h3>
             <p className="text-sm text-zinc-500 mt-2 max-w-sm">
-              We couldn't find any users matching your criteria. Try adjusting
+              We could not find any users matching your criteria. Try adjusting
               your filters or wait for new interactions.
             </p>
             {searchQuery && (

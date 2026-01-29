@@ -1,7 +1,13 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { Upload, ImageIcon, X, Image as LucideImage } from "lucide-react";
+import {
+  Upload,
+  ImageIcon,
+  X,
+  Image as LucideImage,
+  Loader2,
+} from "lucide-react";
 import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
 import { Textarea } from "@workspace/ui/components/textarea";
@@ -24,15 +30,49 @@ export default function BotProfilePage() {
     setDescription,
     placeholder,
     setPlaceholder,
-    // Asumsi di context ada ini, kalau belum ada nanti sesuaikan
     avatarUrl,
     setAvatarUrl,
+    isLoading,
+    error,
+    saveProfile,
   } = useWebchatContext();
 
   const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<Error | null>(null);
+
+  // Handle save button click
+  const handleSave = async () => {
+    try {
+      setSaveError(null);
+      setIsSaving(true);
+      await saveProfile();
+      // Success toast can be added here
+    } catch (err) {
+      setSaveError(
+        err instanceof Error ? err : new Error("Failed to save profile"),
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   return (
     <div className="space-y-8 pb-10">
+      {/* --- ERROR ALERT --- */}
+      {(error || saveError) && (
+        <div className="rounded-lg bg-red-900/20 border border-red-700 p-4 text-sm text-red-400">
+          <p className="font-medium">Error: {(error || saveError)?.message}</p>
+        </div>
+      )}
+
+      {/* --- LOADING STATE --- */}
+      {isLoading && (
+        <div className="rounded-lg bg-blue-900/20 border border-blue-700 p-4 text-sm text-blue-400">
+          <p className="font-medium">Loading profile...</p>
+        </div>
+      )}
+
       {/* --- HEADER --- */}
       <div className="flex items-start justify-between">
         <div>
@@ -43,8 +83,19 @@ export default function BotProfilePage() {
             Configure your bot's profile information and settings
           </p>
         </div>
-        <Button className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-6">
-          Publish Changes
+        <Button
+          onClick={handleSave}
+          disabled={isLoading || isSaving}
+          className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-6"
+        >
+          {isSaving ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Saving...
+            </>
+          ) : (
+            "Save Changes"
+          )}
         </Button>
       </div>
 

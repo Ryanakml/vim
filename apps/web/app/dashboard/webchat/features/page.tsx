@@ -9,6 +9,7 @@ import {
   Volume2,
   Plus,
   RefreshCw,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@workspace/ui/components/button";
 import { Switch } from "@workspace/ui/components/switch";
@@ -33,11 +34,45 @@ export default function FeaturesPage() {
     setEnableSound,
     historyReset,
     setHistoryReset,
+    isLoading,
+    error,
+    saveProfile,
   } = useWebchatContext();
+
   const [activeTab, setActiveTab] = useState("chat");
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveError, setSaveError] = useState<Error | null>(null);
+
+  const handleSaveChanges = async () => {
+    try {
+      setSaveError(null);
+      setIsSaving(true);
+      await saveProfile();
+    } catch (err) {
+      setSaveError(
+        err instanceof Error ? err : new Error("Failed to save features"),
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   return (
     <div className="space-y-8 pb-20">
+      {/* --- ERROR ALERT --- */}
+      {(error || saveError) && (
+        <div className="rounded-lg bg-red-900/20 border border-red-700 p-4 text-sm text-red-400">
+          <p className="font-medium">Error: {(error || saveError)?.message}</p>
+        </div>
+      )}
+
+      {/* --- LOADING STATE --- */}
+      {isLoading && (
+        <div className="rounded-lg bg-blue-900/20 border border-blue-700 p-4 text-sm text-blue-400">
+          <p className="font-medium">Loading features settings...</p>
+        </div>
+      )}
+
       {/* --- HEADER --- */}
       <div className="flex items-start justify-between">
         <div>
@@ -45,8 +80,19 @@ export default function FeaturesPage() {
             Features
           </h1>
         </div>
-        <Button className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-6">
-          Publish Changes
+        <Button
+          onClick={handleSaveChanges}
+          disabled={isLoading || isSaving}
+          className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-6"
+        >
+          {isSaving ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Saving...
+            </>
+          ) : (
+            "Save Changes"
+          )}
         </Button>
       </div>
 
