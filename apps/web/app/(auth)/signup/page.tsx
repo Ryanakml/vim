@@ -112,7 +112,7 @@ export default function SignupPage() {
         strategy: provider === "google" ? "oauth_google" : "oauth_github",
         redirectUrl: "/sso-callback",
         redirectUrlComplete: "/dashboard/overview",
-        continueSignUpUrl: "/onboarding",
+        // continueSignUpUrl: "/onboarding",
       });
     } catch (err: any) {
       setError(err.errors?.[0]?.message || `${provider} sign up failed`);
@@ -135,7 +135,7 @@ export default function SignupPage() {
             <div className="bg-primary text-primary-foreground flex size-6 items-center justify-center rounded-md">
               <GalleryVerticalEnd className="size-4" />
             </div>
-            Chatify
+            Chattify
           </a>
         </div>
         <div className="flex flex-1 items-center justify-center">

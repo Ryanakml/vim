@@ -5,6 +5,7 @@ import { query, mutation } from "./_generated/server.js";
 
 /**
  * Get all conversations for a specific bot
+ * ✅ Automatically filtered to current user's bots only
  * Optionally filter by status (active/closed)
  */
 export const getConversations = query({
@@ -14,13 +15,27 @@ export const getConversations = query({
     status: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const allConversations = await ctx.db.query("conversations").collect();
+    // ✅ Get authenticated user
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthorized: Must be logged in");
+    }
 
-    // Filter by botId and optionally by status
-    let filtered = allConversations.filter(
-      (c) =>
-        c.bot_id === args.botId && (!args.status || c.status === args.status),
-    );
+    const userId = identity.subject;
+
+    // ✅ Filter conversations by user_id and botId
+    const allConversations = await ctx.db
+      .query("conversations")
+      .withIndex("by_user_bot", (q) =>
+        q.eq("user_id", userId).eq("bot_id", args.botId),
+      )
+      .collect();
+
+    // Filter by status if provided
+    let filtered = allConversations;
+    if (args.status) {
+      filtered = filtered.filter((c) => c.status === args.status);
+    }
 
     // Apply limit if provided
     if (args.limit) {
@@ -30,19 +45,22 @@ export const getConversations = query({
     // Enrich with message count and last message
     return Promise.all(
       filtered.map(async (conv) => {
-        const allMessages = await ctx.db.query("messages").collect();
-        const convMessages = allMessages.filter(
-          (m) => m.conversation_id === conv._id,
-        );
+        const convMessages = await ctx.db
+          .query("messages")
+          .withIndex("by_user_id", (q) => q.eq("user_id", userId))
+          .collect()
+          .then((msgs) => msgs.filter((m) => m.conversation_id === conv._id));
 
         const lastMessage = convMessages[convMessages.length - 1] || null;
-        const user = conv.user_id ? await ctx.db.get(conv.user_id) : null;
+        const participant = conv.participant_id
+          ? await ctx.db.get(conv.participant_id)
+          : null;
 
         return {
           ...conv,
           messageCount: convMessages.length,
           lastMessage,
-          user,
+          user: participant,
         };
       }),
     );
@@ -51,31 +69,70 @@ export const getConversations = query({
 
 /**
  * Get all messages for a specific conversation
+ * ✅ Automatically filtered to current user's messages only
  */
 export const getConversationMessages = query({
   args: {
     conversationId: v.id("conversations"),
   },
   handler: async (ctx, args) => {
-    const allMessages = await ctx.db.query("messages").collect();
-    return allMessages.filter((m) => m.conversation_id === args.conversationId);
+    // ✅ Get authenticated user
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthorized: Must be logged in");
+    }
+
+    const userId = identity.subject;
+
+    // ✅ Verify the conversation belongs to this user
+    const conversation = await ctx.db.get(args.conversationId);
+    if (!conversation || conversation.user_id !== userId) {
+      throw new Error("Unauthorized: Cannot access other user's conversations");
+    }
+
+    // ✅ Get messages filtered by user_id
+    return await ctx.db
+      .query("messages")
+      .withIndex("by_user_id", (q) => q.eq("user_id", userId))
+      .collect()
+      .then((msgs) =>
+        msgs.filter((m) => m.conversation_id === args.conversationId),
+      );
   },
 });
 
 /**
  * Create a new conversation
+ * ✅ Automatically associates with current authenticated user
  */
 export const createConversation = mutation({
   args: {
     bot_id: v.id("botProfiles"),
-    user_id: v.id("users"),
+    participant_id: v.id("users"),
     integration: v.string(),
     topic: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    // ✅ Get authenticated user
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthorized: Must be logged in");
+    }
+
+    const userId = identity.subject;
+
+    // ✅ Verify bot belongs to this user
+    const bot = await ctx.db.get(args.bot_id);
+    if (!bot || bot.user_id !== userId) {
+      throw new Error(
+        "Unauthorized: Cannot create conversation for other user's bot",
+      );
+    }
+
     return await ctx.db.insert("conversations", {
+      user_id: userId,
       bot_id: args.bot_id,
-      user_id: args.user_id,
+      participant_id: args.participant_id,
       integration: args.integration,
       topic: args.topic || "Conversation Topic Unknown",
       status: "active",
@@ -88,12 +145,27 @@ export const createConversation = mutation({
 
 /**
  * Close a conversation
+ * ✅ Verifies user owns the conversation
  */
 export const closeConversation = mutation({
   args: {
     conversationId: v.id("conversations"),
   },
   handler: async (ctx, args) => {
+    // ✅ Get authenticated user
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthorized: Must be logged in");
+    }
+
+    const userId = identity.subject;
+
+    // ✅ Verify conversation belongs to this user
+    const conversation = await ctx.db.get(args.conversationId);
+    if (!conversation || conversation.user_id !== userId) {
+      throw new Error("Unauthorized: Cannot close other user's conversations");
+    }
+
     await ctx.db.patch(args.conversationId, {
       status: "closed",
       updated_at: Date.now(),
@@ -103,20 +175,38 @@ export const closeConversation = mutation({
 
 /**
  * Add a message to a conversation
+ * ✅ Verifies user owns the conversation
  * Updates the conversation's last_message_at timestamp
  */
 export const addMessage = mutation({
   args: {
     conversation_id: v.id("conversations"),
-    user_id: v.optional(v.id("users")),
+    participant_id: v.optional(v.id("users")),
     role: v.string(),
     content: v.string(),
   },
   handler: async (ctx, args) => {
-    // Insert message
+    // ✅ Get authenticated user
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthorized: Must be logged in");
+    }
+
+    const userId = identity.subject;
+
+    // ✅ Verify conversation belongs to this user
+    const conversation = await ctx.db.get(args.conversation_id);
+    if (!conversation || conversation.user_id !== userId) {
+      throw new Error(
+        "Unauthorized: Cannot add messages to other user's conversations",
+      );
+    }
+
+    // Insert message with user_id
     const messageId = await ctx.db.insert("messages", {
+      user_id: userId,
       conversation_id: args.conversation_id,
-      user_id: args.user_id,
+      participant_id: args.participant_id,
       role: args.role,
       content: args.content,
       created_at: Date.now(),

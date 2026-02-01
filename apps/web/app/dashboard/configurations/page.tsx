@@ -1,9 +1,7 @@
-// app/dashboard/configurations/page.tsx
 "use client";
 
 import { Button } from "@workspace/ui/components/button";
 import { Input } from "@workspace/ui/components/input";
-import { Textarea } from "@workspace/ui/components/textarea";
 import {
   Select,
   SelectContent,
@@ -17,11 +15,13 @@ import {
   TabsList,
   TabsTrigger,
 } from "@workspace/ui/components/tabs";
-import { BotEmulator } from "@/components/configurations/bot-emulator";
+import { BotSidebar } from "@/components/configurations/bot-sidebar";
+import { Markdown } from "@/components/markdown";
 import { Eye, EyeOff, KeyRound, Loader2 } from "lucide-react";
 import { useState, useEffect } from "react";
 import { KnowledgeBaseSection } from "@/components/configurations/knowledge-base-section";
 import { useGetBotConfig, useUpdateBotConfig } from "@/lib/convex-client";
+import type { Doc } from "@workspace/backend/convex/_generated/dataModel";
 
 export default function ConfigurationsPage() {
   // ===== UI STATES =====
@@ -30,9 +30,18 @@ export default function ConfigurationsPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState<Error | null>(null);
 
+  // ===== SIDEBAR STATES (LIFTED FOR BOT STUDIO) =====
+  const [sidebarTab, setSidebarTab] = useState<"emulator" | "inspector">(
+    "emulator",
+  );
+  const [selectedDocumentId, setSelectedDocumentId] = useState<string | null>(
+    null,
+  );
+  const [selectedPrompt, setSelectedPrompt] = useState(false);
+
   // ===== GENERAL TAB STATES =====
   const [selectedModel, setSelectedModel] = useState("gemini-2.5-pro");
-  const [modelProvider, setModelProvider] = useState("");
+  const [, setModelProvider] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
 
@@ -72,6 +81,20 @@ export default function ConfigurationsPage() {
     }
   }, [botConfig]);
 
+  // ===== HANDLER FOR DOCUMENT SELECTION =====
+  const handleDocumentSelect = (doc: Doc<"documents">) => {
+    setSelectedDocumentId(String(doc._id));
+    setSelectedPrompt(false);
+    setSidebarTab("inspector");
+  };
+
+  // ===== HANDLER FOR PROMPT SELECTION =====
+  const handleSelectSystemInstructions = () => {
+    setSelectedPrompt(true);
+    setSelectedDocumentId(null);
+    setSidebarTab("inspector");
+  };
+
   const MODEL_CONFIG = {
     "gemini-2.5-pro": {
       provider: "Google AI",
@@ -88,7 +111,23 @@ export default function ConfigurationsPage() {
       placeholder: "sk-ant-....................",
       link: "https://console.anthropic.com/settings/keys",
     },
-    grok: {
+    // Groq Models - Updated to latest supported models
+    "llama-3.3-70b-versatile": {
+      provider: "Groq",
+      placeholder: "gsk_........................",
+      link: "https://console.groq.com/keys",
+    },
+    "llama-3.1-8b-instant": {
+      provider: "Groq",
+      placeholder: "gsk_........................",
+      link: "https://console.groq.com/keys",
+    },
+    "openai/gpt-oss-120b": {
+      provider: "Groq",
+      placeholder: "gsk_........................",
+      link: "https://console.groq.com/keys",
+    },
+    "openai/gpt-oss-20b": {
       provider: "Groq",
       placeholder: "gsk_........................",
       link: "https://console.groq.com/keys",
@@ -97,22 +136,34 @@ export default function ConfigurationsPage() {
 
   const modelConfig = MODEL_CONFIG[selectedModel as keyof typeof MODEL_CONFIG];
 
-  const DEFAULT_PROMPT = `You are a helpful AI assistant. Answer concisely and clearly. Follow system instructions strictly.`;
+  // Guard against undefined modelConfig - reset to valid default if needed
+  // This happens when old deprecated model is loaded from DB
+  if (!modelConfig) {
+    setSelectedModel("gemini-2.5-pro");
+    // Return early to prevent render errors - component will re-render after state updates
+    return (
+      <div className="flex h-[calc(100vh-4rem)] w-full items-center justify-center">
+        <p className="text-zinc-400">Loading configuration...</p>
+      </div>
+    );
+  }
 
-  // ===== SAVE HANDLER =====
-  const handleSaveChanges = async () => {
+  // ===== SAVE HANDLER (API KEY & MODEL ONLY) =====
+  const handleSaveApiKeyAndModel = async () => {
     setSaveError(null);
+
+    // Safety check - ensure modelConfig exists
+    if (!modelConfig) {
+      setSaveError(new Error("Invalid model selected"));
+      return;
+    }
+
     setIsSaving(true);
     try {
-      // Determine which mode the user is saving from
-      const isAdvancedMode = activeTab === "advanced";
-
-      // Prepare payload - always include api_key if it's not empty
+      // Prepare payload - only API key and model
       const payload: Record<string, unknown> = {
         model_provider: modelConfig.provider,
         model_id: selectedModel,
-        system_prompt: systemPrompt,
-        isAdvancedMode,
       };
 
       // Only include api_key if it's been provided
@@ -120,17 +171,11 @@ export default function ConfigurationsPage() {
         payload.api_key = apiKey;
       }
 
-      // Only include temperature/maxTokens if in Advanced mode
-      if (isAdvancedMode) {
-        payload.temperature = temperature;
-        payload.max_tokens = maxTokens;
-      }
-
       // Call backend mutation
-      await updateBotConfig(payload as any);
+      await updateBotConfig(payload);
 
       // Optional: Show success feedback
-      console.log("Configuration saved successfully", payload);
+      console.log("API Key and Model saved successfully", payload);
     } catch (error) {
       setSaveError(
         error instanceof Error
@@ -148,60 +193,52 @@ export default function ConfigurationsPage() {
   return (
     // Wrapper Utama: Flex Row biar Kiri (Form) dan Kanan (Emulator) sebelahan
     <div className="flex h-[calc(100vh-4rem)] w-full items-start">
-      {/* BAGIAN TENGAH (FORM) - Scrollable sendiri */}
+      {/* BAGIAN KIRI (FORM) - Scrollable sendiri */}
       <div className="flex-1 overflow-y-auto h-full p-6">
-        <div className="mx-auto max-w-4xl space-y-8">
+        <div className="mx-auto max-w-4xl h-full flex flex-col">
           {/* --- ERROR ALERT --- */}
           {saveError && (
-            <div className="rounded-lg bg-red-900/20 border border-red-700 p-4 text-sm text-red-400">
+            <div className="mb-6 rounded-lg bg-red-900/20 border border-red-700 p-4 text-sm text-red-400">
               <p className="font-medium">Error: {saveError.message}</p>
             </div>
           )}
 
-          {/* --- LOADING STATE --- */}
-          {isLoading && (
-            <div className="rounded-lg bg-blue-900/20 border border-blue-700 p-4 text-sm text-blue-400">
-              <p className="font-medium flex items-center gap-2">
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Loading configuration...
-              </p>
-            </div>
-          )}
-
-          {/* Header Section */}
-          <div className="flex items-center justify-between">
+          {/* Header Section (Selalu Muncul) */}
+          <div className="flex items-center justify-between mb-8 shrink-0">
             <div>
               <h1 className="text-2xl font-semibold tracking-tight">
                 Configuration
               </h1>
               <p className="text-sm text-muted-foreground">
-                Manage your agen&rsquo;s personality and knowledge.
+                Manage your agent&rsquo;s personality and knowledge.
               </p>
             </div>
-            <Button
-              onClick={handleSaveChanges}
-              disabled={isSaving || isLoading}
-              className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-6"
-            >
-              {isSaving ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Saving...
-                </>
-              ) : (
-                "Save Changes"
-              )}
-            </Button>
           </div>
 
-          {/* Tabs Container - Hidden during loading */}
-          {!isLoading && (
+          {/* --- CONTENT SWITCHER --- */}
+          {isLoading ? (
+            /* --- CENTERED LOADING STATE --- */
+            <div className="flex-1 flex flex-col items-center justify-center min-h-[400px] animate-in fade-in duration-500">
+              <div className="relative mb-4">
+                {/* Efek Glow di belakang spinner */}
+                <div className="absolute inset-0 bg-blue-500/20 blur-xl rounded-full animate-pulse" />
+                <Loader2 className="relative h-10 w-10 text-blue-500 animate-spin" />
+              </div>
+              <h3 className="text-lg font-medium text-zinc-100">
+                Loading Configuration...
+              </h3>
+              <p className="text-sm text-muted-foreground mt-1">
+                Syncing with neural network
+              </p>
+            </div>
+          ) : (
+            /* --- TABS & FORM CONTENT --- */
             <Tabs
               value={activeTab}
               onValueChange={setActiveTab}
-              className="w-full"
+              className="w-full animate-in slide-in-from-bottom-2 duration-500"
             >
-              <TabsList className="grid w-full max-w-md grid-cols-2 bg-zinc-900/50 border border-zinc-800 p-1 rounded-lg">
+              <TabsList className="grid w-full max-w-md grid-cols-2 bg-zinc-900/50 border border-zinc-800 p-1 rounded-lg mb-6">
                 <TabsTrigger
                   value="general"
                   className="data-[state=active]:bg-blue-600 data-[state=active]:text-white data-[state=active]:shadow-lg transition-all"
@@ -219,7 +256,7 @@ export default function ConfigurationsPage() {
               {/* ===== GENERAL TAB ===== */}
               <TabsContent
                 value="general"
-                className="space-y-6 animate-in fade-in-50 duration-300"
+                className="space-y-6 focus-visible:outline-none"
               >
                 {/* MODEL SELECTION & API KEY */}
                 <section className="rounded-xl border border-zinc-800 bg-card shadow-sm overflow-hidden">
@@ -253,7 +290,19 @@ export default function ConfigurationsPage() {
                           <SelectItem value="claude-3.5-sonnet">
                             Claude 3.5 Sonnet
                           </SelectItem>
-                          <SelectItem value="grok">Grok (Groq)</SelectItem>
+                          {/* Groq Models - Latest supported */}
+                          <SelectItem value="llama-3.3-70b-versatile">
+                            Llama 3.3 70B (Groq)
+                          </SelectItem>
+                          <SelectItem value="llama-3.1-8b-instant">
+                            Llama 3.1 8B Instant (Groq)
+                          </SelectItem>
+                          <SelectItem value="openai/gpt-oss-120b">
+                            GPT OSS 120B (Groq)
+                          </SelectItem>
+                          <SelectItem value="openai/gpt-oss-20b">
+                            GPT OSS 20B (Groq)
+                          </SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
@@ -303,52 +352,66 @@ export default function ConfigurationsPage() {
                         Your API key is encrypted and stored securely.
                       </p>
                     </div>
+
+                    {/* Save Button - Moved below API Key */}
+                    <div className="flex gap-2 pt-4 border-t border-zinc-800">
+                      <Button
+                        onClick={handleSaveApiKeyAndModel}
+                        disabled={isSaving || isLoading}
+                        className="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-medium transition-all"
+                      >
+                        {isSaving ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Saving...
+                          </>
+                        ) : (
+                          "Save API Key"
+                        )}
+                      </Button>
+                    </div>
                   </div>
                 </section>
 
-                {/* Prompt Section */}
-                <section className="rounded-xl border border-zinc-800 bg-card p-6 shadow-sm space-y-3">
+                {/* System Instructions - Read-only Preview Card */}
+                <section
+                  onClick={handleSelectSystemInstructions}
+                  className={`rounded-xl border cursor-pointer transition-all ${
+                    selectedPrompt
+                      ? "border-blue-600/50 bg-blue-900/20"
+                      : "border-zinc-800 bg-card hover:border-zinc-700 hover:bg-zinc-900/30"
+                  } p-6 shadow-sm space-y-3 min-h-[280px] flex flex-col justify-between`}
+                >
                   <div className="flex items-start justify-between gap-4">
-                    <div className="space-y-1">
+                    <div className="space-y-1 flex-1">
                       <h2 className="text-base font-semibold">
                         System Instructions
                       </h2>
                       <p className="text-sm text-muted-foreground">
-                        Define how your agent should behave and interact with
-                        users.
+                        Click to edit how your agent should behave and interact
+                        with users.
                       </p>
                     </div>
-
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSystemPrompt(DEFAULT_PROMPT);
-                      }}
-                      className="mt-1 text-[10px] text-blue-500 uppercase tracking-wider underline underline-offset-4 hover:text-blue-400 whitespace-nowrap"
-                    >
-                      use default prompt
-                    </button>
                   </div>
 
-                  {/* Textarea */}
-                  <Textarea
-                    value={systemPrompt}
-                    onChange={(e) => {
-                      setSystemPrompt(e.target.value);
-                    }}
-                    className="min-h-[250px] font-mono text-sm leading-relaxed bg-zinc-900/50 border-zinc-800 focus-visible:ring-blue-600 focus-visible:border-blue-600"
-                    placeholder="You are a helpful AI assistant..."
-                  />
+                  {/* Preview Text */}
+                  <div className="flex-1 min-h-[150px] max-h-[200px] overflow-hidden rounded-md bg-zinc-900/40 border border-zinc-800 p-3 font-mono text-xs leading-relaxed text-zinc-300 line-clamp-8">
+                    {systemPrompt ? (
+                      <Markdown content={systemPrompt} className="text-xs" />
+                    ) : (
+                      "No system instructions defined."
+                    )}
+                  </div>
                 </section>
 
                 {/* Knowledge Base Section */}
-                <KnowledgeBaseSection />
+                <KnowledgeBaseSection onDocumentSelect={handleDocumentSelect} />
               </TabsContent>
 
               {/* ===== ADVANCED TAB ===== */}
               <TabsContent
                 value="advanced"
-                className="space-y-6 animate-in fade-in-50 duration-300"
+                className="space-y-6 focus-visible:outline-none"
               >
                 <section className="rounded-xl border border-zinc-800 bg-card shadow-sm overflow-hidden">
                   <div className="border-b border-zinc-800 bg-muted/40 p-6 pb-4">
@@ -447,7 +510,17 @@ export default function ConfigurationsPage() {
       </div>
 
       {/* BAGIAN KANAN (EMULATOR) - Tetap diam (fixed width) */}
-      <BotEmulator />
+      <div className="w-[450px] shrink-0 h-full overflow-hidden border-l border-zinc-800 bg-zinc-950/50">
+        <BotSidebar
+          activeTab={sidebarTab}
+          onTabChange={setSidebarTab}
+          selectedDocumentId={selectedDocumentId}
+          selectedPrompt={selectedPrompt}
+          onDocumentSelect={handleDocumentSelect}
+          systemPrompt={systemPrompt}
+          onSystemPromptChange={setSystemPrompt}
+        />
+      </div>
     </div>
   );
 }

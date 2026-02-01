@@ -9,6 +9,7 @@ import {
   CreditCard,
   LogOut,
   Sparkles,
+  Sun,
 } from "lucide-react";
 
 import {
@@ -147,6 +148,10 @@ export function NavUser() {
               <DropdownMenuItem>
                 <Bell />
                 Notifications
+              </DropdownMenuItem>
+              <DropdownMenuItem>
+                <Sun />
+                Theme
               </DropdownMenuItem>
             </DropdownMenuGroup>
             <DropdownMenuSeparator />

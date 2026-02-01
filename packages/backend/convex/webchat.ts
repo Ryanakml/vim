@@ -3,21 +3,55 @@ import { query, mutation } from "./_generated/server.js";
 
 // ===== BOT PROFILES =====
 
-// Get single bot profile (assume one profile for now)
+// Get single bot profile for current authenticated user
 export const getBotProfile = query({
   handler: async (ctx) => {
-    const profiles = await ctx.db.query("botProfiles").collect();
-    return profiles[0] || null;
+    // ✅ Get authenticated user's identity
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthorized: Must be logged in");
+    }
+
+    const userId = identity.subject; // Clerk user ID
+
+    // ✅ Filter by user_id - get only current user's profile
+    const profilesWithUserId = await ctx.db
+      .query("botProfiles")
+      .withIndex("by_user_id", (q) => q.eq("user_id", userId))
+      .collect();
+
+    if (profilesWithUserId.length > 0) {
+      return profilesWithUserId[0];
+    }
+
+    // ⚠️ Fallback: If no profile exists, return null (ensureBotProfile will create one)
+    return null;
   },
 });
 
 // Create initial profile if doesn't exist
 export const ensureBotProfile = mutation({
   handler: async (ctx) => {
-    const existing = await ctx.db.query("botProfiles").collect();
+    // ✅ Get authenticated user's identity
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthorized: Must be logged in");
+    }
+
+    const userId = identity.subject;
+    const organizationId = (identity.org_id as string | undefined) || undefined;
+
+    // ✅ Check if profile already exists for this user
+    const existing = await ctx.db
+      .query("botProfiles")
+      .withIndex("by_user_id", (q) => q.eq("user_id", userId))
+      .collect();
+
     if (existing.length > 0) return existing[0];
 
     return await ctx.db.insert("botProfiles", {
+      user_id: userId,
+      organization_id: organizationId,
       avatar_url: "",
       bot_names: "My Bot",
       bot_description: "",
@@ -58,7 +92,24 @@ export const updateBotProfile = mutation({
     history_reset: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    // ✅ Verify user is authenticated
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthorized: Must be logged in");
+    }
+
+    const userId = identity.subject;
     const { id, ...updates } = args;
+
+    // ✅ Verify this profile belongs to the authenticated user
+    const profile = await ctx.db.get(id);
+    if (!profile) {
+      throw new Error("Profile not found");
+    }
+    if (profile.user_id !== userId) {
+      throw new Error("Unauthorized: Cannot update other user's profile");
+    }
+
     await ctx.db.patch(id, {
       ...updates,
       updated_at: Date.now(),
@@ -66,10 +117,22 @@ export const updateBotProfile = mutation({
   },
 });
 
-// Get all bot profiles (legacy, kept for backward compatibility)
+// Get all bot profiles for current user (no longer returns all profiles)
 export const getBotProfiles = query({
   handler: async (ctx) => {
-    return await ctx.db.query("botProfiles").collect();
+    // ✅ Get authenticated user's identity
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthorized: Must be logged in");
+    }
+
+    const userId = identity.subject;
+
+    // ✅ Return only current user's profiles
+    return await ctx.db
+      .query("botProfiles")
+      .withIndex("by_user_id", (q) => q.eq("user_id", userId))
+      .collect();
   },
 });
 
@@ -82,7 +145,18 @@ export const updateBotProfiles = mutation({
     msg_placeholder: v.string(),
   },
   handler: async (ctx, args) => {
+    // ✅ Get authenticated user's identity
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthorized: Must be logged in");
+    }
+
+    const userId = identity.subject;
+    const organizationId = (identity.org_id as string | undefined) || undefined;
+
     await ctx.db.insert("botProfiles", {
+      user_id: userId,
+      organization_id: organizationId,
       avatar_url: args.avatar_url,
       bot_names: args.bot_names,
       bot_description: args.bot_description,

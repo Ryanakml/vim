@@ -7,6 +7,7 @@ import React, {
   ReactNode,
   useEffect,
 } from "react";
+import { useAuth } from "@clerk/nextjs";
 import {
   useBotProfile,
   useEnsureBotProfile,
@@ -56,6 +57,9 @@ interface WebchatContextType {
 const WebchatContext = createContext<WebchatContextType | undefined>(undefined);
 
 export function WebchatProvider({ children }: { children: ReactNode }) {
+  // ✅ Track current authenticated user to reset state when user changes
+  const { userId: currentUserId } = useAuth();
+
   // Convex hooks
   const botProfile = useBotProfile();
   const updateBotProfile = useUpdateBotProfile();
@@ -64,6 +68,10 @@ export function WebchatProvider({ children }: { children: ReactNode }) {
   // Loading and error state
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<Error | null>(null);
+  // ✅ Track previous user ID to detect user changes
+  const [previousUserId, setPreviousUserId] = useState<string | null>(
+    currentUserId || null,
+  );
 
   // Profile settings
   const [displayName, setDisplayName] = useState("");
@@ -87,13 +95,41 @@ export function WebchatProvider({ children }: { children: ReactNode }) {
   const [enableSound, setEnableSound] = useState(false);
   const [historyReset, setHistoryReset] = useState("never");
 
+  // ✅ Reset all state when user changes (logout/login different account)
+  useEffect(() => {
+    if (currentUserId !== previousUserId) {
+      // User has changed - reset all local state
+      if (previousUserId !== null) {
+        // Clear state (but not on initial mount)
+        setDisplayName("");
+        setDescription("");
+        setPlaceholder("");
+        setPrimaryColor("#3276EA");
+        setAvatarUrl("");
+        setFont("inter");
+        setThemeMode("light");
+        setHeaderStyle("basic");
+        setMessageStyle("filled");
+        setCornerRadius(16);
+        setEnableFeedback(false);
+        setEnableFileUpload(false);
+        setEnableSound(false);
+        setHistoryReset("never");
+        setError(null);
+      }
+      setPreviousUserId(currentUserId ?? null);
+    }
+  }, [currentUserId, previousUserId]);
+
   // On mount: ensure bot profile exists
   useEffect(() => {
     const initProfile = async () => {
+      if (!currentUserId) return;
       try {
         setIsLoading(true);
         await ensureBotProfile();
       } catch (err) {
+        if (!currentUserId) return;
         setError(
           err instanceof Error ? err : new Error("Failed to load profile"),
         );
@@ -102,7 +138,7 @@ export function WebchatProvider({ children }: { children: ReactNode }) {
       }
     };
     initProfile();
-  }, [ensureBotProfile]);
+  }, [ensureBotProfile, currentUserId]); // ✅ Re-run when userId changes
 
   // Update local state when botProfile is loaded from Convex
   useEffect(() => {

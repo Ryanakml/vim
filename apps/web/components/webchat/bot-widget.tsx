@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import {
   RefreshCw,
   MessageSquare,
@@ -11,7 +11,10 @@ import {
   ThumbsUp,
   ThumbsDown,
   Plus,
+  Loader2,
+  X,
 } from "lucide-react";
+import { toast } from "sonner";
 import { cn } from "@workspace/ui/lib/utils";
 import { Button } from "@workspace/ui/components/button";
 import {
@@ -21,13 +24,26 @@ import {
 } from "@workspace/ui/components/avatar";
 import { ScrollArea } from "@workspace/ui/components/scroll-area";
 import { Input } from "@workspace/ui/components/input";
+import { Markdown } from "@/components/markdown";
 import { useWebchatContext } from "@/contexts/webchat-context";
+import {
+  useBotProfile,
+  useGetPlaygroundSession,
+  useAddPlaygroundMessage,
+  useRestartPlaygroundSession,
+  useGetOrCreatePlaygroundSession,
+  useGetPlaygroundMessages,
+  useGenerateBotResponse,
+  useGenerateBotResponseStream,
+  type Message as ConvexMessage,
+} from "@/lib/convex-client";
 
 interface Message {
   id: string;
   role: "user" | "bot";
   content: string;
   timestamp: Date;
+  _id?: string; // Convex ID if saved
 }
 
 interface BotWidgetProps {
@@ -36,60 +52,203 @@ interface BotWidgetProps {
 
 const GRID_BG_SVG =
   "data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' width='16' height='16' fill='none' stroke='white'%3e%3cpath d='M0 .5H16V16'/%3e%3c/svg%3e";
-const INITIAL_MESSAGE: Message = {
-  id: "1",
-  role: "bot",
-  content: "Hello! How can I assist you today?",
-  timestamp: new Date(),
-};
-const BOT_RESPONSE_DELAY = 1000;
 
 export function BotWidget({ className }: BotWidgetProps) {
-  const [messages, setMessages] = useState<Message[]>([INITIAL_MESSAGE]);
+  // Context and backend hooks
+  const botProfile = useBotProfile();
+  const createOrGetSession = useGetOrCreatePlaygroundSession();
+  const addPlaygroundMessage = useAddPlaygroundMessage();
+  const restartSession = useRestartPlaygroundSession();
+  const generateBotResponse = useGenerateBotResponse();
+  const {
+    startStream,
+    chunks,
+    isStreaming,
+    cancelStream: cancelStreamFunc,
+    error: streamError,
+  } = useGenerateBotResponseStream();
+
+  // Local state
+  const [dbMessages, setDbMessages] = useState<Message[]>([]); // Source of truth from DB only
   const [input, setInput] = useState("");
   const [isOpen, setIsOpen] = useState(true);
+  const [sessionId, setSessionId] = useState<string | null>(null);
+  const [isLoadingSession, setIsLoadingSession] = useState(true);
+  const [isSendingMessage, setIsSendingMessage] = useState(false);
+  const [useStreamingMode, setUseStreamingMode] = useState(true); // Toggle between streaming and non-streaming
+  const [streamingMessageId, setStreamingMessageId] = useState<string | null>(
+    null,
+  );
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
-  const {
-    font,
-    themeMode,
-    cornerRadius,
-    enableFeedback,
-    enableFileUpload,
-    enableSound,
-  } = useWebchatContext();
+  const { font, themeMode, cornerRadius } = useWebchatContext();
 
+  // ✅ FIX: Subscribe to messages separately for real-time updates
+  // This ensures UI updates when bot messages are added, fixing ghost messages
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const playgroundMessages = useGetPlaygroundMessages(sessionId as any);
+
+  // Initialize playground session on mount
+  useEffect(() => {
+    const initSession = async () => {
+      if (!botProfile) return;
+
+      // Clear stale state immediately
+      setSessionId(null);
+      setDbMessages([]);
+
+      try {
+        setIsLoadingSession(true);
+        const session = await createOrGetSession({ botId: botProfile._id });
+        if (session) {
+          const id = typeof session === "string" ? session : session._id;
+          setSessionId(id);
+        }
+      } catch (error) {
+        console.error("Failed to initialize playground session:", error);
+      } finally {
+        setIsLoadingSession(false);
+      }
+    };
+
+    initSession();
+  }, [botProfile, createOrGetSession]);
+
+  // ✅ SYNC: Update dbMessages when playgroundMessages changes (DB source of truth only)
+  useEffect(() => {
+    if (!playgroundMessages) return;
+
+    const convertedMessages: Message[] = playgroundMessages.map(
+      (msg: ConvexMessage) => ({
+        id: msg._id,
+        role: msg.role as "user" | "bot",
+        content: msg.content,
+        timestamp: new Date(msg.created_at),
+        _id: msg._id,
+      }),
+    );
+
+    setDbMessages(convertedMessages);
+  }, [playgroundMessages]);
+
+  // ✅ DERIVED STATE: Compute displayMessages (DB + streaming placeholder)
+  // This is computed on-the-fly, NOT synced via useEffect
+  // Chunks updates trigger re-renders but NOT state updates = smooth streaming!
+  const displayMessages = useMemo(() => {
+    if (isStreaming && streamingMessageId && chunks.length > 0) {
+      // STREAMING MODE: Append streaming placeholder with current chunks
+      return [
+        ...dbMessages,
+        {
+          id: streamingMessageId,
+          role: "bot" as const,
+          content: chunks.join(""), // Direct chunk rendering = no intermediate state
+          timestamp: new Date(),
+          _id: streamingMessageId,
+        },
+      ];
+    }
+    // NORMAL MODE: Just display DB messages
+    return dbMessages;
+  }, [dbMessages, isStreaming, streamingMessageId, chunks]);
+
+  // Auto-scroll to latest message (smooth streaming because displayMessages updates reactively)
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollIntoView({ behavior: "smooth" });
     }
-  }, [messages]);
+  }, [displayMessages]);
 
-  const handleSend = (e?: React.FormEvent) => {
+  const handleSend = async (e?: React.FormEvent) => {
     e?.preventDefault();
-    if (!input.trim()) return;
+    if (!input.trim() || !sessionId || !botProfile) return;
 
-    const newMessage: Message = {
-      id: Date.now().toString(),
-      role: "user",
-      content: input,
-      timestamp: new Date(),
-    };
-
-    setMessages((prev) => [...prev, newMessage]);
+    const userContent = input;
     setInput("");
+    setIsSendingMessage(true);
 
-    setTimeout(() => {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: (Date.now() + 1).toString(),
-          role: "bot",
-          content: "Testing answer from bot!",
-          timestamp: new Date(),
-        },
-      ]);
-    }, BOT_RESPONSE_DELAY);
+    try {
+      // Add user message to database
+      await addPlaygroundMessage({
+        botId: botProfile._id,
+        role: "user",
+        content: userContent,
+      });
+
+      if (useStreamingMode) {
+        // STREAMING MODE
+        console.log("[handleSend] Using streaming mode");
+
+        // Create streaming message ID - displayMessages will compute the placeholder
+        const streamMsgId = `stream-${Date.now()}`;
+        setStreamingMessageId(streamMsgId);
+
+        try {
+          // Start streaming - this will populate chunks in real-time
+          await startStream(botProfile._id, sessionId, userContent);
+
+          // Stream completed successfully - response is now in database
+          console.log("[handleSend] Streaming completed successfully");
+
+          // Wait a tick for database to sync, then clear streaming placeholder
+          // This ensures the actual bot message from DB replaces the placeholder
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          setStreamingMessageId(null);
+
+          if (streamError) {
+            console.error("[handleSend] Stream had error:", streamError);
+            toast.error(streamError || "Streaming failed");
+          }
+        } catch (error) {
+          const errorMessage =
+            error instanceof Error ? error.message : String(error);
+          console.error("[handleSend] Stream error:", errorMessage);
+          toast.error("Failed to stream response");
+          // Clear streaming state on error
+          setStreamingMessageId(null);
+        }
+      } else {
+        // NON-STREAMING MODE (fallback)
+        console.log("[handleSend] Using non-streaming mode");
+
+        // Generate AI response using the unified AI engine
+        await generateBotResponse({
+          botId: botProfile._id,
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          conversationId: sessionId as any,
+          userMessage: userContent,
+        });
+      }
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      toast.error(errorMessage || "Failed to send message. Please try again.");
+      setInput(userContent);
+    } finally {
+      setIsSendingMessage(false);
+    }
+  };
+
+  const handleCancelStream = useCallback(() => {
+    cancelStreamFunc();
+    // Clear streaming state - displayMessages will revert to dbMessages
+    setStreamingMessageId(null);
+  }, [cancelStreamFunc]);
+
+  const handleRestart = async () => {
+    if (!botProfile) return;
+
+    try {
+      setIsLoadingSession(true);
+      const newSessionId = await restartSession({ botId: botProfile._id });
+      setSessionId(newSessionId);
+      setDbMessages([]); // Clear DB messages when restarting session
+      setStreamingMessageId(null); // Clear any streaming state
+    } catch (error) {
+      console.error("Failed to restart session:", error);
+    } finally {
+      setIsLoadingSession(false);
+    }
   };
 
   // Get font family based on selection
@@ -137,14 +296,21 @@ export function BotWidget({ className }: BotWidgetProps) {
           fontFamily: getFontFamily(),
         }}
       >
-        <WidgetHeader onRefresh={() => setMessages([])} />
+        <WidgetHeader onRefresh={handleRestart} isLoading={isLoadingSession} />
 
-        <ChatArea messages={messages} scrollRef={scrollRef} />
+        <ChatArea
+          messages={displayMessages}
+          scrollRef={scrollRef}
+          isLoadingSession={isLoadingSession}
+        />
 
         <WidgetFooter
           input={input}
           onInputChange={setInput}
           onSend={handleSend}
+          isLoading={isSendingMessage || isLoadingSession}
+          isStreaming={isStreaming}
+          onCancelStream={handleCancelStream}
         />
       </div>
 
@@ -155,9 +321,10 @@ export function BotWidget({ className }: BotWidgetProps) {
 
 interface WidgetHeaderProps {
   onRefresh: () => void;
+  isLoading: boolean;
 }
 
-function WidgetHeader({ onRefresh }: WidgetHeaderProps) {
+function WidgetHeader({ onRefresh, isLoading }: WidgetHeaderProps) {
   const {
     displayName,
     primaryColor,
@@ -259,8 +426,9 @@ function WidgetHeader({ onRefresh }: WidgetHeaderProps) {
             color: headerTextColor,
           }}
           onClick={onRefresh}
+          disabled={isLoading}
         >
-          <RefreshCw className="h-4 w-4" />
+          <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin")} />
         </Button>
       </div>
     </div>
@@ -270,9 +438,10 @@ function WidgetHeader({ onRefresh }: WidgetHeaderProps) {
 interface ChatAreaProps {
   messages: Message[];
   scrollRef: React.RefObject<HTMLDivElement | null>;
+  isLoadingSession: boolean;
 }
 
-function ChatArea({ messages, scrollRef }: ChatAreaProps) {
+function ChatArea({ messages, scrollRef, isLoadingSession }: ChatAreaProps) {
   const { primaryColor, displayName, avatarUrl, themeMode } =
     useWebchatContext();
 
@@ -281,6 +450,24 @@ function ChatArea({ messages, scrollRef }: ChatAreaProps) {
     themeMode === "light" ? "bg-zinc-50/50" : "bg-zinc-800/50";
   const textSecondaryColor =
     themeMode === "light" ? "text-zinc-400" : "text-zinc-500";
+
+  if (isLoadingSession) {
+    return (
+      <div
+        className={cn(
+          "flex-1 overflow-hidden w-full relative h-0 flex items-center justify-center",
+          contentSubBgColor,
+        )}
+      >
+        <div className="flex flex-col items-center gap-2">
+          <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
+          <p className={cn("text-xs font-medium", textSecondaryColor)}>
+            Loading Configuration...
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -303,14 +490,17 @@ function ChatArea({ messages, scrollRef }: ChatAreaProps) {
                 </AvatarFallback>
               </Avatar>
               <p className={cn("text-xs font-medium", textSecondaryColor)}>
-                Powered by Chatify
+                Powered by Chattify
+              </p>
+              <p className={cn("text-[10px]", textSecondaryColor)}>
+                (Playground Mode)
               </p>
             </div>
           )}
 
           {messages.map((msg) => (
             <MessageBubble
-              key={msg.id}
+              key={msg._id || msg.id}
               message={msg}
               primaryColor={primaryColor}
               botName={nameToDisplay}
@@ -412,7 +602,11 @@ function MessageBubble({
                   }
           }
         >
-          {message.content}
+          {isBot ? (
+            <Markdown content={message.content} className="text-xs" />
+          ) : (
+            message.content
+          )}
         </div>
       </div>
 
@@ -453,9 +647,19 @@ interface WidgetFooterProps {
   input: string;
   onInputChange: (value: string) => void;
   onSend: (e?: React.FormEvent) => void;
+  isLoading: boolean;
+  isStreaming?: boolean;
+  onCancelStream?: () => void;
 }
 
-function WidgetFooter({ input, onInputChange, onSend }: WidgetFooterProps) {
+function WidgetFooter({
+  input,
+  onInputChange,
+  onSend,
+  isLoading,
+  isStreaming,
+  onCancelStream,
+}: WidgetFooterProps) {
   const {
     primaryColor,
     placeholder,
@@ -489,10 +693,11 @@ function WidgetFooter({ input, onInputChange, onSend }: WidgetFooterProps) {
           <button
             type="button"
             className={cn(
-              "p-2 rounded-lg transition-colors hover:bg-zinc-700/50",
+              "p-2 rounded-lg transition-colors hover:bg-zinc-700/50 disabled:opacity-50",
               iconColor,
             )}
             aria-label="Upload file"
+            disabled={isLoading}
           >
             <Plus className="h-5 w-5" />
           </button>
@@ -521,20 +726,36 @@ function WidgetFooter({ input, onInputChange, onSend }: WidgetFooterProps) {
               ? primaryColor
               : inputBorderColor;
           }}
+          disabled={isLoading}
         />
 
         <div className="relative">
-          {input.trim() ? (
+          {isStreaming ? (
+            <Button
+              type="button"
+              size="icon"
+              className="h-9 w-9 transition-all duration-200 shadow-sm text-white bg-red-500 hover:bg-red-600"
+              onClick={onCancelStream}
+              aria-label="Cancel stream"
+            >
+              <X className="h-5 w-5" />
+            </Button>
+          ) : input.trim() ? (
             <Button
               type="submit"
               size="icon"
-              className="h-9 w-9 transition-all duration-200 shadow-sm text-white"
+              className="h-9 w-9 transition-all duration-200 shadow-sm text-white disabled:opacity-50"
               style={{
                 backgroundColor: primaryColor,
                 borderRadius: `${cornerRadius * 0.3}px`,
               }}
+              disabled={isLoading}
             >
-              <ArrowUp className="h-5 w-5" />
+              {isLoading ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                <ArrowUp className="h-5 w-5" />
+              )}
             </Button>
           ) : (
             <Button
@@ -545,6 +766,7 @@ function WidgetFooter({ input, onInputChange, onSend }: WidgetFooterProps) {
               style={{
                 color: themeMode === "light" ? "#D4D4D8" : "#71717A",
               }}
+              disabled={isLoading}
             >
               <Mic className="h-5 w-5" />
             </Button>
@@ -557,8 +779,7 @@ function WidgetFooter({ input, onInputChange, onSend }: WidgetFooterProps) {
         style={{ color: powerBgColor }}
       >
         <span className="text-yellow-500">⚡</span>
-        <span>Powered by</span>
-        <span>Chatify</span>
+        <span>Powered by Chattify</span>
       </div>
     </div>
   );

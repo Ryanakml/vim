@@ -1,6 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState, useEffect } from "react";
+import { useAction } from "convex/react";
+import { api } from "@workspace/backend/convex/_generated/api";
 import { Button } from "@workspace/ui/components/button";
 import {
   Dialog,
@@ -9,6 +11,7 @@ import {
 } from "@workspace/ui/components/dialog";
 import { Input } from "@workspace/ui/components/input";
 import { Textarea } from "@workspace/ui/components/textarea";
+import { Markdown } from "@/components/markdown";
 import {
   FileText,
   Globe,
@@ -18,6 +21,8 @@ import {
   ArrowLeft,
   LucideIcon,
 } from "lucide-react";
+import { useBotProfile, useKnowledgeDocuments } from "@/lib/convex-client";
+import type { Doc } from "@workspace/backend/convex/_generated/dataModel";
 
 // --- 1. CONFIGURATION (PUSAT KONTROL TAMPILAN) ---
 
@@ -106,16 +111,239 @@ const SOURCE_OPTIONS: SourceOption[] = [
   },
 ];
 
-export function KnowledgeBaseSection() {
+export function KnowledgeBaseSection({
+  onDocumentSelect,
+}: {
+  onDocumentSelect?: (doc: Doc<"documents">) => void;
+} = {}) {
   const [open, setOpen] = useState(false);
   const [currentView, setCurrentView] = useState<SourceId | "selection">(
     "selection",
   );
-  const [documents, setDocuments] = useState<any[]>([]);
+  const [documents, setDocuments] = useState<
+    {
+      id: string;
+      title: string;
+      text: string;
+      source: SourceId;
+      fullDoc?: Doc<"documents">;
+    }[]
+  >([]);
+  const [inlineTitle, setInlineTitle] = useState("");
+  const [inlineContent, setInlineContent] = useState("");
+  const [websiteUrl, setWebsiteUrl] = useState("");
+  const [uploadFiles, setUploadFiles] = useState<File[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
+
+  const botProfile = useBotProfile();
+  const knowledgeDocuments = useKnowledgeDocuments(botProfile?._id);
+  const addKnowledge = useAction(api.knowledge.addKnowledge);
+
+  // Load existing documents from database
+  useEffect(() => {
+    if (knowledgeDocuments && botProfile) {
+      const botId = botProfile._id;
+      const loadedDocs = knowledgeDocuments.map((doc: any) => {
+        const text = doc.text || "";
+        const docObj: Doc<"documents"> = {
+          _id: doc.id,
+          _creationTime: doc.createdAt,
+          botId: botId,
+          text: text,
+          embedding: [],
+        };
+        return {
+          id: String(doc.id),
+          title: text.split("\n")[0].replace(/^# /, "") || "Document",
+          text: text,
+          source: "inline" as SourceId,
+          fullDoc: docObj,
+        };
+      });
+      setDocuments(loadedDocs);
+    }
+  }, [knowledgeDocuments, botProfile]);
 
   const handleOpenChange = (val: boolean) => {
     setOpen(val);
     if (!val) setTimeout(() => setCurrentView("selection"), 300);
+  };
+
+  const resetErrors = () => setErrorMessage(null);
+
+  const handleFilesPicked = (files: FileList | null) => {
+    if (!files) return;
+    setUploadFiles(Array.from(files));
+    resetErrors();
+  };
+
+  const readTextFile = async (file: File) => {
+    const isText =
+      file.type.startsWith("text/") ||
+      file.name.endsWith(".txt") ||
+      file.name.endsWith(".md");
+    if (!isText) {
+      throw new Error(
+        `Unsupported file type for ${file.name}. Please upload .txt or .md files for now.`,
+      );
+    }
+
+    return await file.text();
+  };
+
+  const handleAddInline = async () => {
+    if (!botProfile?._id) {
+      setErrorMessage("Bot profile is not ready yet. Please try again.");
+      return;
+    }
+
+    const content = inlineContent.trim();
+    if (!content) {
+      setErrorMessage("Please enter content for the snippet.");
+      return;
+    }
+
+    resetErrors();
+    setIsSubmitting(true);
+    try {
+      const payloadText = inlineTitle.trim()
+        ? `# ${inlineTitle.trim()}\n\n${content}`
+        : content;
+      const result = await addKnowledge({
+        botId: botProfile._id,
+        text: payloadText,
+      });
+
+      setDocuments((prev) => [
+        ...prev,
+        {
+          id: String(result.id),
+          title: inlineTitle.trim() || "Inline Snippet",
+          text: payloadText,
+          source: "inline",
+          fullDoc: {
+            _id: result.id,
+            botId: botProfile._id,
+            text: payloadText,
+            embedding: [],
+            _creationTime: Date.now(),
+          } as Doc<"documents">,
+        },
+      ]);
+
+      setInlineTitle("");
+      setInlineContent("");
+      setOpen(false);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Failed to add snippet",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleAddWebsite = async () => {
+    if (!botProfile?._id) {
+      setErrorMessage("Bot profile is not ready yet. Please try again.");
+      return;
+    }
+
+    const url = websiteUrl.trim();
+    if (!url) {
+      setErrorMessage("Please enter a valid website URL.");
+      return;
+    }
+
+    resetErrors();
+    setIsSubmitting(true);
+    try {
+      const payloadText = `Website source: ${url}`;
+      const result = await addKnowledge({
+        botId: botProfile._id,
+        text: payloadText,
+      });
+
+      setDocuments((prev) => [
+        ...prev,
+        {
+          id: String(result.id),
+          title: url,
+          text: payloadText,
+          source: "website",
+          fullDoc: {
+            _id: result.id,
+            botId: botProfile._id,
+            text: payloadText,
+            embedding: [],
+            _creationTime: Date.now(),
+          } as Doc<"documents">,
+        },
+      ]);
+
+      setWebsiteUrl("");
+      setOpen(false);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Failed to add website",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleUploadDocuments = async () => {
+    if (!botProfile?._id) {
+      setErrorMessage("Bot profile is not ready yet. Please try again.");
+      return;
+    }
+
+    if (uploadFiles.length === 0) {
+      setErrorMessage("Please select at least one text file to upload.");
+      return;
+    }
+
+    resetErrors();
+    setIsSubmitting(true);
+    try {
+      for (const file of uploadFiles) {
+        const text = await readTextFile(file);
+        const payloadText = `# ${file.name}\n\n${text}`.trim();
+        const result = await addKnowledge({
+          botId: botProfile._id,
+          text: payloadText,
+        });
+
+        setDocuments((prev) => [
+          ...prev,
+          {
+            id: String(result.id),
+            title: file.name,
+            text: payloadText,
+            source: "document",
+            fullDoc: {
+              _id: result.id,
+              botId: botProfile._id,
+              text: payloadText,
+              embedding: [],
+              _creationTime: Date.now(),
+            } as Doc<"documents">,
+          },
+        ]);
+      }
+
+      setUploadFiles([]);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      setOpen(false);
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Failed to upload documents",
+      );
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const activeSource = SOURCE_OPTIONS.find((s) => s.id === currentView);
@@ -127,7 +355,7 @@ export function KnowledgeBaseSection() {
         <div>
           <h2 className="text-base font-semibold">Knowledge Base</h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Manage your agent's knowledge sources.
+            Manage your agents knowledge sources.
           </p>
         </div>
         {documents.length > 0 && (
@@ -156,9 +384,24 @@ export function KnowledgeBaseSection() {
           </div>
         ) : (
           <div className="space-y-3">
-            <div className="p-4 border rounded-md text-sm text-muted-foreground">
-              Dummy List Item
-            </div>
+            {documents.map((doc) => (
+              <button
+                key={doc.id}
+                onClick={() => {
+                  if (onDocumentSelect && doc.fullDoc) {
+                    onDocumentSelect(doc.fullDoc);
+                  }
+                }}
+                className="w-full text-left rounded-md border border-zinc-800 bg-zinc-900/30 p-4 text-sm text-muted-foreground hover:bg-zinc-800/50 hover:border-zinc-700 transition-colors cursor-pointer"
+              >
+                <div className="font-medium text-foreground mb-1">
+                  {doc.title}
+                </div>
+                <div className="line-clamp-2 text-xs text-muted-foreground">
+                  <Markdown content={doc.text} className="text-xs" />
+                </div>
+              </button>
+            ))}
           </div>
         )}
       </div>
@@ -251,7 +494,26 @@ export function KnowledgeBaseSection() {
             {/* VIEW 2: DOCUMENT UPLOAD */}
             {currentView === "document" && (
               <div className="flex flex-col h-full justify-between">
-                <div className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-zinc-700 rounded-xl bg-zinc-900/50 hover:bg-zinc-900 hover:border-zinc-600 transition-colors cursor-pointer p-12">
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  accept=".txt,.md,text/plain,text/markdown"
+                  multiple
+                  onChange={(event) => handleFilesPicked(event.target.files)}
+                />
+                <div
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => fileInputRef.current?.click()}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault();
+                      fileInputRef.current?.click();
+                    }
+                  }}
+                  className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-zinc-700 rounded-xl bg-zinc-900/50 hover:bg-zinc-900 hover:border-zinc-600 transition-colors cursor-pointer p-12"
+                >
                   <div className="bg-zinc-800 p-4 rounded-full mb-4">
                     <UploadCloud className="h-8 w-8 text-zinc-400" />
                   </div>
@@ -259,9 +521,17 @@ export function KnowledgeBaseSection() {
                     Click to upload or drag and drop
                   </h3>
                   <p className="text-sm text-zinc-500 mt-2">
-                    PDF, TXT, DOCX, MD (Max 10MB)
+                    TXT, MD (Max 10MB)
                   </p>
+                  {uploadFiles.length > 0 && (
+                    <div className="mt-4 text-xs text-zinc-400">
+                      {uploadFiles.map((file) => file.name).join(", ")}
+                    </div>
+                  )}
                 </div>
+                {errorMessage && (
+                  <p className="text-sm text-red-400 mt-4">{errorMessage}</p>
+                )}
                 <div className="flex justify-end gap-3 pt-6">
                   <Button
                     variant="ghost"
@@ -271,14 +541,19 @@ export function KnowledgeBaseSection() {
                     Cancel
                   </Button>
                   {/* Button Standar (Primary) */}
-                  <Button>Upload Documents</Button>
+                  <Button
+                    onClick={handleUploadDocuments}
+                    disabled={isSubmitting || !botProfile?._id}
+                  >
+                    {isSubmitting ? "Uploading..." : "Upload Documents"}
+                  </Button>
                 </div>
               </div>
             )}
 
             {/* VIEW 3: INLINE TEXT */}
             {currentView === "inline" && (
-              <div className="space-y-6">
+              <div className="space-y-6 max-h-[calc(100vh-300px)] overflow-y-auto pr-4">
                 <div className="space-y-2">
                   <label className="text-sm font-medium text-zinc-300">
                     Title
@@ -286,6 +561,8 @@ export function KnowledgeBaseSection() {
                   <Input
                     placeholder="e.g. Return Policy 2024"
                     className="bg-zinc-900 border-zinc-700 focus:ring-zinc-600 text-zinc-100 placeholder:text-zinc-600"
+                    value={inlineTitle}
+                    onChange={(event) => setInlineTitle(event.target.value)}
                   />
                 </div>
                 <div className="space-y-2">
@@ -294,9 +571,14 @@ export function KnowledgeBaseSection() {
                   </label>
                   <Textarea
                     placeholder="Enter your text content here..."
-                    className="min-h-[300px] bg-zinc-900 border-zinc-700 focus:ring-zinc-600 text-zinc-100 font-mono text-sm leading-relaxed placeholder:text-zinc-600 resize-none p-4"
+                    className="max-h-[400px] min-h-[200px] bg-zinc-900 border-zinc-700 focus:ring-zinc-600 text-zinc-100 font-mono text-sm leading-relaxed placeholder:text-zinc-600 resize-none p-4 overflow-y-auto"
+                    value={inlineContent}
+                    onChange={(event) => setInlineContent(event.target.value)}
                   />
                 </div>
+                {errorMessage && (
+                  <p className="text-sm text-red-400">{errorMessage}</p>
+                )}
                 <div className="flex justify-end gap-3">
                   <Button
                     variant="ghost"
@@ -306,7 +588,12 @@ export function KnowledgeBaseSection() {
                     Cancel
                   </Button>
                   {/* Button Standar (Primary) */}
-                  <Button>Add Snippet</Button>
+                  <Button
+                    onClick={handleAddInline}
+                    disabled={isSubmitting || !botProfile?._id}
+                  >
+                    {isSubmitting ? "Saving..." : "Add Snippet"}
+                  </Button>
                 </div>
               </div>
             )}
@@ -328,6 +615,10 @@ export function KnowledgeBaseSection() {
                         <Input
                           placeholder="https://example.com/docs"
                           className="pl-9 bg-zinc-900 border-zinc-700 focus:ring-zinc-600 text-zinc-100 placeholder:text-zinc-600"
+                          value={websiteUrl}
+                          onChange={(event) =>
+                            setWebsiteUrl(event.target.value)
+                          }
                         />
                       </div>
                     </div>
@@ -350,6 +641,9 @@ export function KnowledgeBaseSection() {
                     </div>
                   </div>
                 </div>
+                {errorMessage && (
+                  <p className="text-sm text-red-400 mt-4">{errorMessage}</p>
+                )}
                 <div className="mt-auto pt-6 flex justify-end gap-3 border-t border-zinc-800">
                   <Button
                     variant="ghost"
@@ -359,7 +653,12 @@ export function KnowledgeBaseSection() {
                     Cancel
                   </Button>
                   {/* Button Standar (Primary) */}
-                  <Button>Discover Pages</Button>
+                  <Button
+                    onClick={handleAddWebsite}
+                    disabled={isSubmitting || !botProfile?._id}
+                  >
+                    {isSubmitting ? "Saving..." : "Discover Pages"}
+                  </Button>
                 </div>
               </div>
             )}

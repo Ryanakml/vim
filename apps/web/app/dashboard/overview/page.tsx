@@ -21,9 +21,12 @@ import {
 import { Avatar, AvatarFallback } from "@workspace/ui/components/avatar";
 import { useRouter } from "next/navigation";
 import { cn } from "@workspace/ui/lib/utils";
-import { useDashboardStats } from "@/lib/convex-client";
-
-// --- 1. MOCK DATA ---
+import {
+  useDashboardStats,
+  useBotProfile,
+  useAIMetrics,
+  useKnowledgeUtilization,
+} from "@/lib/convex-client";
 
 // A. Activity Data (Messages) - Default Main Chart
 const ACTIVITY_DATA = [
@@ -47,51 +50,6 @@ const PERFORMANCE_DATA = [
   { time: "11 PM", calls: 15, spend: 0.35 },
 ];
 
-// C. Summary Stats
-const KPI_STATS = {
-  messages: { value: 117, trend: "+12% from yesterday" },
-  users: { value: 42, trend: "+5% from yesterday" },
-  activeConvs: { value: 8, trend: "Same as yesterday" },
-};
-
-const PERFORMANCE_METRICS = {
-  aiSpend: 3.12,
-  totalSpendLimit: 50.0,
-  llmCalls: 149,
-  llmErrors: 0,
-};
-
-const RECENT_CONVERSATIONS = [
-  {
-    id: "c1",
-    userName: "Anonymous User",
-    avatarColor: "bg-pink-600",
-    lastMessage: "Pricing Inquiry...",
-    timestamp: "9:27 PM",
-  },
-  {
-    id: "c2",
-    userName: "Anonymous User",
-    avatarColor: "bg-purple-600",
-    lastMessage: "Support Ticket #402",
-    timestamp: "4:14 PM",
-  },
-  {
-    id: "c3",
-    userName: "Anonymous User",
-    avatarColor: "bg-blue-600",
-    lastMessage: "Integration Help",
-    timestamp: "9:20 AM",
-  },
-  {
-    id: "c4",
-    userName: "Anonymous User",
-    avatarColor: "bg-green-600",
-    lastMessage: "Bug Report",
-    timestamp: "8:35 AM",
-  },
-];
-
 export default function OverviewPage() {
   const router = useRouter();
   const [timeRange, setTimeRange] = useState<"24h" | "7d" | "30d">("24h");
@@ -103,6 +61,16 @@ export default function OverviewPage() {
 
   // Fetch real dashboard statistics
   const dashboardStats = useDashboardStats();
+
+  // Fetch bot profile to get botId
+  const botProfile = useBotProfile();
+
+  // Calculate days for time range
+  const days = timeRange === "24h" ? 1 : timeRange === "7d" ? 7 : 30;
+
+  // Fetch AI metrics
+  const aiMetrics = useAIMetrics(botProfile?._id, days);
+  const knowledgeStats = useKnowledgeUtilization(botProfile?._id, days);
 
   // Loading state
   if (dashboardStats === undefined) {
@@ -121,6 +89,17 @@ export default function OverviewPage() {
   const totalConversations = dashboardStats?.totalConversations ?? 0;
   const activeConversations = dashboardStats?.activeConversations ?? 0;
   const latestConversations = dashboardStats?.latestConversations ?? [];
+
+  // Prepare performance chart data from AI metrics
+  const performanceChartData = aiMetrics
+    ? [
+        {
+          time: "Metrics",
+          calls: aiMetrics.totalRequests,
+          spend: aiMetrics.totalRequests * 0.01, // Estimated cost per call
+        },
+      ]
+    : PERFORMANCE_DATA;
 
   return (
     <div className="flex h-full w-full flex-col bg-[#09090b] text-zinc-100 p-8 space-y-8 overflow-y-auto transition-colors duration-500">
@@ -154,19 +133,49 @@ export default function OverviewPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* --- LEFT COLUMN (BIG CHART) --- */}
         <div className="lg:col-span-2 space-y-8">
-          {/* 1. KPI CARDS (Real Data) */}
-          <div className="grid grid-cols-3 gap-4">
-            <KpiCard
-              title="Conversations"
-              value={totalConversations}
-              subtext={`${activeConversations} active`}
-            />
-            <KpiCard title="Users" value={totalUsers} subtext="Total users" />
-            <KpiCard
-              title="Active Conversations"
-              value={activeConversations}
-              subtext={`${((activeConversations / totalConversations) * 100 || 0).toFixed(0)}% of total`}
-            />
+          {/* 1. KPI CARDS (Dinamis berdasarkan viewMode) */}
+          <div className="grid grid-cols-3 gap-4 transition-all duration-500">
+            {viewMode === "overview" ? (
+              <>
+                <KpiCard
+                  title="Total Conversations"
+                  value={totalConversations}
+                  subtext={`${activeConversations} active now`}
+                />
+                <KpiCard
+                  title="Total Users"
+                  value={totalUsers}
+                  subtext="Unique customers"
+                />
+                <KpiCard
+                  title="Active Rate"
+                  value={Number(
+                    (
+                      (activeConversations / totalConversations) * 100 || 0
+                    ).toFixed(0),
+                  )}
+                  subtext="% of total convs"
+                />
+              </>
+            ) : (
+              <>
+                <KpiCard
+                  title="LLM Requests"
+                  value={aiMetrics?.totalRequests || 0}
+                  subtext="Total API calls"
+                />
+                <KpiCard
+                  title="Avg Latency"
+                  value={aiMetrics?.avgExecutionTimeMs || 0}
+                  subtext="Milliseconds (ms)"
+                />
+                <KpiCard
+                  title="Success Rate"
+                  value={Number(aiMetrics?.successRate?.toFixed(0) || 0)}
+                  subtext="% successful calls"
+                />
+              </>
+            )}
           </div>
 
           {/* 2. DYNAMIC MAIN CHART */}
@@ -299,42 +308,66 @@ export default function OverviewPage() {
             <CardContent className="p-0">
               <div className="divide-y divide-zinc-800/50">
                 {latestConversations.length > 0 ? (
-                  latestConversations.map((conv) => (
-                    <div
-                      key={conv._id}
-                      className="flex items-center gap-3 p-4 hover:bg-zinc-800/30 transition-colors cursor-pointer group"
-                      onClick={() =>
-                        router.push("/dashboard/monitor/conversations")
-                      }
-                    >
-                      <Avatar className="h-9 w-9 border border-zinc-800">
-                        <AvatarFallback className="text-white text-xs font-semibold bg-blue-600">
-                          {conv.user?.name?.[0]?.toUpperCase() || "U"}
-                        </AvatarFallback>
-                      </Avatar>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex justify-between items-baseline">
-                          <span className="text-sm font-medium text-zinc-200 truncate">
-                            {conv.user?.name || "Anonymous User"}
-                          </span>
-                          <span className="text-[10px] text-zinc-500 ml-2 shrink-0">
-                            {conv.last_message_at
-                              ? new Date(
-                                  conv.last_message_at,
-                                ).toLocaleTimeString("en-US", {
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                  hour12: true,
-                                })
-                              : "—"}
-                          </span>
+                  latestConversations.map((conv) => {
+                    const isClosed = conv.status === "closed";
+
+                    return (
+                      <div
+                        key={conv._id}
+                        className={cn(
+                          "flex items-center gap-3 p-4 transition-all duration-200 cursor-pointer group",
+
+                          isClosed
+                            ? "opacity-50 grayscale hover:opacity-100 hover:grayscale-0 hover:bg-zinc-800/30"
+                            : "hover:bg-zinc-800/50",
+                        )}
+                        onClick={() =>
+                          router.push("/dashboard/monitor/conversations")
+                        }
+                      >
+                        <Avatar className="h-9 w-9 border border-zinc-800">
+                          <AvatarFallback
+                            className={cn(
+                              "text-white text-xs font-semibold",
+                              // 3. Avatar juga ikut jadi abu-abu kalau closed
+                              isClosed ? "bg-zinc-700" : "bg-blue-600",
+                            )}
+                          >
+                            {conv.user?.name?.[0]?.toUpperCase() || "U"}
+                          </AvatarFallback>
+                        </Avatar>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex justify-between items-baseline">
+                            <span
+                              className={cn(
+                                "text-sm font-medium truncate transition-colors",
+                                // 4. Nama user jadi agak pudar kalau closed
+                                isClosed
+                                  ? "text-zinc-500 group-hover:text-zinc-300"
+                                  : "text-zinc-200",
+                              )}
+                            >
+                              {conv.user?.name || "Anonymous User"}
+                            </span>
+                            <span className="text-[10px] text-zinc-500 ml-2 shrink-0">
+                              {conv.last_message_at
+                                ? new Date(
+                                    conv.last_message_at,
+                                  ).toLocaleTimeString("en-US", {
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                    hour12: true,
+                                  })
+                                : "—"}
+                            </span>
+                          </div>
+                          <p className="text-xs text-zinc-500 truncate group-hover:text-zinc-400 transition-colors">
+                            {conv.topic || "No topic"}
+                          </p>
                         </div>
-                        <p className="text-xs text-zinc-500 truncate group-hover:text-zinc-400 transition-colors">
-                          {conv.topic || "No topic"}
-                        </p>
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 ) : (
                   <div className="p-8 text-center text-zinc-500">
                     <p className="text-sm">No conversations yet</p>
@@ -382,55 +415,65 @@ export default function OverviewPage() {
             </CardHeader>
 
             <CardContent className="space-y-6 pt-4">
-              {/* KONTEN JIKA MODE 'OVERVIEW' (Card Menampilkan Performance) */}
               {viewMode === "overview" ? (
                 <>
-                  <div className="space-y-2">
+                  <div key="success-rate-stat" className="space-y-2">
+                    {" "}
+                    {/* Tambahkan key di sini */}
                     <div className="flex justify-between text-xs">
-                      <span className="text-zinc-400">AI Spend</span>
+                      <span className="text-zinc-400">Success Rate</span>
                       <span className="text-zinc-200 font-mono">
-                        ${PERFORMANCE_METRICS.aiSpend.toFixed(2)}
+                        {aiMetrics?.successRate?.toFixed(1) || "—"}%
                       </span>
                     </div>
                     <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden">
                       <div
-                        className="h-full bg-blue-600 rounded-full"
-                        style={{ width: "6%" }}
+                        className="h-full bg-green-600 rounded-full"
+                        style={{
+                          width: `${aiMetrics?.successRate || 0}%`,
+                        }}
                       />
                     </div>
                   </div>
 
-                  <div className="space-y-2">
+                  <div key="llm-calls-stat" className="space-y-2">
                     <div className="flex justify-between text-xs">
                       <span className="text-zinc-400">LLM Calls</span>
                       <span className="text-zinc-200 font-mono">
-                        {PERFORMANCE_METRICS.llmCalls}
+                        {aiMetrics?.totalRequests || 0}
                       </span>
                     </div>
-                    <div className="h-10 w-full">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={PERFORMANCE_DATA}>
-                          <Area
-                            type="monotone"
-                            dataKey="calls"
-                            stroke="#52525b"
-                            strokeWidth={1.5}
-                            fill="none"
-                          />
-                        </AreaChart>
-                      </ResponsiveContainer>
+                    <div className="flex justify-between text-xs text-zinc-500">
+                      <span>Avg Response</span>
+                      <span>{aiMetrics?.avgExecutionTimeMs || 0}ms</span>
+                    </div>
+                  </div>
+
+                  <div key="knowledge-base-stat" className="space-y-2">
+                    <div className="flex justify-between text-xs">
+                      <span className="text-zinc-400">Knowledge Base</span>
+                      <span className="text-zinc-200 font-mono">
+                        {knowledgeStats?.utilizationRate?.toFixed(1) || "—"}%
+                      </span>
+                    </div>
+                    <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-blue-600 rounded-full transition-all"
+                        style={{
+                          width: `${knowledgeStats?.utilizationRate || 0}%`,
+                        }}
+                      />
                     </div>
                   </div>
                 </>
               ) : (
                 /* KONTEN JIKA MODE 'PERFORMANCE' (Card Menampilkan Activity/Overview) */
-                /* Ini yang "menggantikan posisi performance di bawah kanan" */
                 <>
                   <div className="space-y-2">
                     <div className="flex justify-between text-xs">
                       <span className="text-zinc-400">Total Messages</span>
                       <span className="text-zinc-200 font-mono">
-                        {KPI_STATS.messages.value}
+                        {totalConversations}
                       </span>
                     </div>
                     <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden">
@@ -443,21 +486,28 @@ export default function OverviewPage() {
 
                   <div className="space-y-2">
                     <div className="flex justify-between text-xs">
-                      <span className="text-zinc-400">User Activity</span>
-                      <span className="text-zinc-200 font-mono">High</span>
+                      <span className="text-zinc-400">Active Rate</span>
+                      <span className="text-zinc-200 font-mono">
+                        {totalConversations > 0
+                          ? (
+                              (activeConversations / totalConversations) *
+                              100
+                            ).toFixed(1)
+                          : "—"}
+                        %
+                      </span>
                     </div>
-                    <div className="h-10 w-full">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <AreaChart data={ACTIVITY_DATA}>
-                          <Area
-                            type="monotone"
-                            dataKey="messages"
-                            stroke="#52525b"
-                            strokeWidth={1.5}
-                            fill="none"
-                          />
-                        </AreaChart>
-                      </ResponsiveContainer>
+                    <div className="h-1.5 w-full bg-zinc-800 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-orange-500 rounded-full"
+                        style={{
+                          width: `${
+                            totalConversations > 0
+                              ? (activeConversations / totalConversations) * 100
+                              : 0
+                          }%`,
+                        }}
+                      />
                     </div>
                   </div>
                 </>

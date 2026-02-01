@@ -13,6 +13,7 @@ import {
   PieChart,
   Settings2,
   SquareTerminal,
+  ShoppingCart,
 } from "lucide-react";
 
 import { NavMain } from "@/components/nav-main";
@@ -112,7 +113,7 @@ const data = {
     {
       name: "Omnichannel",
       url: "/dashboard/integrations/omnichannel",
-      icon: Frame,
+      icon: ShoppingCart,
     },
   ],
 };

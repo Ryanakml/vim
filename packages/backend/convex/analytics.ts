@@ -18,53 +18,66 @@ export type DashboardStats = {
 
 /**
  * Query: Get aggregated dashboard statistics
+ * ✅ Automatically filtered to current user's data only
  *
  * Returns:
- * - totalUsers: Total number of users in the system
- * - totalConversations: Total number of conversations
+ * - totalUsers: Total number of conversation participants
+ * - totalConversations: Total number of this user's conversations
  * - activeConversations: Count of conversations with "active" status
- * - latestConversations: Last 5 conversations sorted by desc, with user & message count
+ * - latestConversations: Last 5 conversations sorted by desc, with participant & message count
  */
 export const getDashboardStats = query(async (ctx): Promise<DashboardStats> => {
-  // Fetch all users and conversations
-  const users = await ctx.db.query("users").collect();
-  const conversations = await ctx.db.query("conversations").collect();
+  // ✅ Get authenticated user
+  const identity = await ctx.auth.getUserIdentity();
+  if (!identity) {
+    throw new Error("Unauthorized: Must be logged in");
+  }
+
+  const userId = identity.subject;
+
+  // ✅ Fetch only current user's conversations
+  const userConversations = await ctx.db
+    .query("conversations")
+    .withIndex("by_user_id", (q) => q.eq("user_id", userId))
+    .collect();
 
   // Calculate basic metrics
-  const totalUsers = users.length;
-  const totalConversations = conversations.length;
-  const activeConversations = conversations.filter(
+  const totalConversations = userConversations.length;
+  const activeConversations = userConversations.filter(
     (c) => c.status === "active",
   ).length;
 
   // Get latest 5 conversations sorted by last_message_at descending
-  const sortedConversations = [...conversations].sort(
+  const sortedConversations = [...userConversations].sort(
     (a, b) => b.last_message_at - a.last_message_at,
   );
   const latest = sortedConversations.slice(0, 5);
 
-  // Enrich latest conversations with user data and message count
+  // Enrich latest conversations with participant data and message count
   const enrichedLatest = await Promise.all(
     latest.map(async (conv) => {
-      // Fetch user if user_id exists
-      const user = conv.user_id ? await ctx.db.get(conv.user_id) : null;
+      // Fetch participant (end user in chat) if participant_id exists
+      const participant = conv.participant_id
+        ? await ctx.db.get(conv.participant_id)
+        : null;
 
-      // Count messages in this conversation
+      // Count messages in this conversation (filtered by user_id for added security)
       const messages = await ctx.db
         .query("messages")
-        .withIndex("by_conversation", (q) => q.eq("conversation_id", conv._id))
-        .collect();
+        .withIndex("by_user_id", (q) => q.eq("user_id", userId))
+        .collect()
+        .then((msgs) => msgs.filter((m) => m.conversation_id === conv._id));
 
       return {
         ...conv,
         messageCount: messages.length,
-        user,
+        user: participant,
       };
     }),
   );
 
   return {
-    totalUsers,
+    totalUsers: enrichedLatest.filter((c) => c.user).length,
     totalConversations,
     activeConversations,
     latestConversations: enrichedLatest,

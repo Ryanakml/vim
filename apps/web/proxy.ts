@@ -8,6 +8,7 @@ const isPublicRoute = createRouteMatcher([
   "/forgot-password(.*)",
   "/reset-password(.*)",
   "/onboarding(.*)", // Allow onboarding without organization check
+  "/", // Home page
 ]);
 
 export default clerkMiddleware(async (auth, req) => {

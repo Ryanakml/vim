@@ -66,7 +66,7 @@ export default function OnboardingPage() {
     <div className="flex items-center justify-center min-h-screen bg-muted/40 px-4">
       <Card className="w-full max-w-md">
         <CardHeader className="text-center space-y-2">
-          <CardTitle className="text-2xl">Welcome to Chatify</CardTitle>
+          <CardTitle className="text-2xl">Welcome to Chattify</CardTitle>
           <CardDescription>
             Create your first workspace to get started
           </CardDescription>

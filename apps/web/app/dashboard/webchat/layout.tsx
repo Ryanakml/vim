@@ -17,7 +17,7 @@ export default function WebchatLayout({
 
         {/* SEKSI KANAN: Bot Emulator */}
         {/* HAPUS bg-[#09090b], biarkan BotWidget yang ngatur warnanya sendiri */}
-        <aside className="hidden xl:flex w-[700px] border-l h-full relative flex-col">
+        <aside className="hidden xl:flex w-[550px] border-l h-full relative flex-col">
           <BotWidget />
         </aside>
       </div>

@@ -5,6 +5,7 @@ import { ThemeProvider as NextThemesProvider } from "next-themes";
 import { ClerkProvider, useAuth } from "@clerk/nextjs";
 import { ConvexProviderWithClerk } from "convex/react-clerk";
 import { ConvexReactClient } from "convex/react";
+import { Toaster } from "@workspace/ui/components/sonner";
 import { WebchatProvider } from "@/contexts/webchat-context";
 
 // Initialize Convex client
@@ -16,7 +17,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
       publishableKey={process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
       // signInUrl="/signin"
       // signUpUrl="/signup"
-      // afterSignOutUrl="/signin"
+      afterSignOutUrl="/"
     >
       <ConvexProviderWithClerk client={convex} useAuth={useAuth}>
         <NextThemesProvider
@@ -27,6 +28,11 @@ export function Providers({ children }: { children: React.ReactNode }) {
           enableColorScheme
         >
           <WebchatProvider>{children}</WebchatProvider>
+          <Toaster
+            richColors
+            position="top-center"
+            style={{ zIndex: 99999 }} // Forces it above everything
+          />
         </NextThemesProvider>
       </ConvexProviderWithClerk>
     </ClerkProvider>
