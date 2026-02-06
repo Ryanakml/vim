@@ -42,6 +42,39 @@ export const logAIResponse = internalMutation({
   },
 });
 
+/**
+ * Internal Mutation: Save Bot Message
+ *
+ * Safely inserts bot response into messages table without auth checks.
+ * Used by: generateBotResponse action for "widget" and unknown integrations
+ * Parameters: conversationId, botResponse
+ *
+ * Why internal mutation?
+ * - Public actions can't directly access ctx.db
+ * - This bypasses auth checks (safe because it's server-side only)
+ * - Simplest way to save messages for public widget
+ */
+export const saveBotMessage = internalMutation({
+  args: {
+    conversationId: v.id("conversations"),
+    botResponse: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const msgId = await ctx.db.insert("messages", {
+      conversation_id: args.conversationId,
+      role: "bot",
+      content: args.botResponse,
+      created_at: Date.now(),
+      // No user_id for public widget (visitor-based)
+    });
+
+    console.log(
+      `[saveBotMessage] ✓ Saved bot message - conversationId: ${args.conversationId}, msgId: ${msgId}`,
+    );
+    return msgId;
+  },
+});
+
 // ===== NEW: STREAMING HELPERS =====
 
 /**
@@ -290,8 +323,8 @@ export const generateBotResponse = action({
             );
 
             const chunks = docs
-              .map((doc) => doc?.text)
-              .filter((text): text is string => Boolean(text));
+              .map((doc: any) => doc?.text)
+              .filter((text: any): text is string => Boolean(text));
 
             if (chunks.length > 0) {
               contextBlock = chunks.join("\n\n");
@@ -465,7 +498,7 @@ export const generateBotResponse = action({
       "[generateBotResponse] STEP 6: Saving bot response to database...",
     );
     try {
-      // Determine which API to use based on integration type
+      // Route message saving based on integration type
       if (integration === "emulator") {
         console.log(
           "[generateBotResponse]   Using emulator session save function...",
@@ -475,8 +508,7 @@ export const generateBotResponse = action({
           role: "bot",
           content: botResponseText,
         });
-      } else {
-        // Default to playground for backwards compatibility
+      } else if (integration === "playground") {
         console.log(
           "[generateBotResponse]   Using playground session save function...",
         );
@@ -484,6 +516,24 @@ export const generateBotResponse = action({
           botId,
           role: "bot",
           content: botResponseText,
+        });
+      } else if (integration === "widget") {
+        // Widget integration: Use internal mutation (no admin auth required)
+        console.log(
+          "[generateBotResponse]   Using internal message save for widget...",
+        );
+        await ctx.runMutation(internal.ai.saveBotMessage, {
+          conversationId,
+          botResponse: botResponseText,
+        });
+      } else {
+        // Fallback for unknown integration types
+        console.log(
+          "[generateBotResponse]   Using default internal message save...",
+        );
+        await ctx.runMutation(internal.ai.saveBotMessage, {
+          conversationId,
+          botResponse: botResponseText,
         });
       }
       console.log("[generateBotResponse] ✓ Bot response saved successfully");

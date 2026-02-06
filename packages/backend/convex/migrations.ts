@@ -230,6 +230,92 @@ export const migrateUserIdForAiLogs = mutation({
   },
 });
 
+// ===== VISITOR SUPPORT MIGRATION =====
+
+/**
+ * Migration: Add visitor_id and organization_id support for public chats
+ *
+ * Purpose:
+ * - Support anonymous visitors in the chat system
+ * - Enable public chat sessions without authentication
+ * - Add organization_id for multi-tenant public lookups
+ *
+ * Changes:
+ * - conversations: Add visitor_id (optional), organization_id (optional)
+ * - messages: Add visitor_id (optional)
+ *
+ * Strategy: Backfill existing records with null values (no behavior change)
+ */
+export const addVisitorSupport = mutation({
+  handler: async (ctx) => {
+    console.log("\n=== Starting Visitor Support Migration ===\n");
+
+    try {
+      // Backfill conversations with visitor_id and organization_id
+      console.log(
+        "Backfilling conversations with visitor_id and organization_id...",
+      );
+      const conversations = await ctx.db.query("conversations").collect();
+      let conversationsUpdated = 0;
+
+      for (const conversation of conversations) {
+        if (
+          !("visitor_id" in conversation) ||
+          !("organization_id" in conversation)
+        ) {
+          await ctx.db.patch(conversation._id, {
+            visitor_id: undefined,
+            organization_id: undefined,
+          });
+          conversationsUpdated++;
+        }
+      }
+      console.log(`✅ Backfilled ${conversationsUpdated} conversations`);
+
+      // Backfill messages with visitor_id
+      console.log("Backfilling messages with visitor_id...");
+      const messages = await ctx.db.query("messages").collect();
+      let messagesUpdated = 0;
+
+      for (const message of messages) {
+        if (!("visitor_id" in message)) {
+          await ctx.db.patch(message._id, {
+            visitor_id: undefined,
+          });
+          messagesUpdated++;
+        }
+      }
+      console.log(`✅ Backfilled ${messagesUpdated} messages`);
+
+      console.log("\n=== Migration Completed Successfully ===");
+      console.log("✅ New fields and indexes ready:");
+      console.log("   - conversations.visitor_id");
+      console.log("   - conversations.organization_id");
+      console.log(
+        "   - conversations indexes: by_bot_and_visitor, by_organization",
+      );
+      console.log("   - messages.visitor_id");
+      console.log("   - messages index: by_visitor");
+      console.log(
+        `Total records updated: ${conversationsUpdated + messagesUpdated}\n`,
+      );
+
+      return {
+        success: true,
+        conversationsUpdated,
+        messagesUpdated,
+        message: "✅ Visitor support migration completed successfully!",
+      };
+    } catch (error) {
+      console.error("❌ Migration failed:", error);
+      return {
+        success: false,
+        error: String(error),
+      };
+    }
+  },
+});
+
 // ===== COMPREHENSIVE MIGRATION (RECOMMENDED) =====
 
 /**
@@ -243,6 +329,7 @@ export const migrateUserIdForAiLogs = mutation({
  * 2. mutation { migrateUserIdForConversationsAndMessages() }
  * 3. mutation { migrateUserIdForDocuments() }
  * 4. mutation { migrateUserIdForAiLogs() }
+ * 5. mutation { addVisitorSupport() } ← NEW: Visitor support
  *
  * Then verify all data is properly isolated
  */

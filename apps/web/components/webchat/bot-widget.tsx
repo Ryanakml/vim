@@ -1,30 +1,14 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import {
-  RefreshCw,
-  MessageSquare,
-  Mic,
-  ArrowUp,
-  ChevronDown,
-  Volume2,
-  ThumbsUp,
-  ThumbsDown,
-  Plus,
-  Loader2,
-  X,
-} from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@workspace/ui/lib/utils";
-import { Button } from "@workspace/ui/components/button";
 import {
-  Avatar,
-  AvatarFallback,
-  AvatarImage,
-} from "@workspace/ui/components/avatar";
-import { ScrollArea } from "@workspace/ui/components/scroll-area";
-import { Input } from "@workspace/ui/components/input";
-import { Markdown } from "@/components/markdown";
+  ChatContainer,
+  type BotConfig,
+  type Message,
+  type ChatSession,
+} from "@workspace/ui/components/widget";
 import { useWebchatContext } from "@/contexts/webchat-context";
 import {
   useBotProfile,
@@ -38,20 +22,9 @@ import {
   type Message as ConvexMessage,
 } from "@/lib/convex-client";
 
-interface Message {
-  id: string;
-  role: "user" | "bot";
-  content: string;
-  timestamp: Date;
-  _id?: string; // Convex ID if saved
-}
-
 interface BotWidgetProps {
   className?: string;
 }
-
-const GRID_BG_SVG =
-  "data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' width='16' height='16' fill='none' stroke='white'%3e%3cpath d='M0 .5H16V16'/%3e%3c/svg%3e";
 
 export function BotWidget({ className }: BotWidgetProps) {
   // Context and backend hooks
@@ -159,11 +132,14 @@ export function BotWidget({ className }: BotWidgetProps) {
     }
   }, [displayMessages]);
 
-  const handleSend = async (e?: React.FormEvent) => {
+  const handleSend = async (e?: React.FormEvent, messageContent?: string) => {
     e?.preventDefault();
-    if (!input.trim() || !sessionId || !botProfile) return;
 
-    const userContent = input;
+    // Accept content from either state or parameter (for shared component)
+    const userContent = messageContent || input;
+
+    if (!userContent.trim() || !sessionId || !botProfile) return;
+
     setInput("");
     setIsSendingMessage(true);
 
@@ -251,21 +227,79 @@ export function BotWidget({ className }: BotWidgetProps) {
     }
   };
 
-  // Get font family based on selection
-  const getFontFamily = () => {
-    switch (font) {
-      case "roboto":
-        return "'Roboto', sans-serif";
-      case "system":
-        return "system-ui, -apple-system, sans-serif";
-      case "inter":
-      default:
-        return "'Inter', sans-serif";
-    }
+  // Wrapper for shared component callback signature
+  const handleSendMessage = useCallback(
+    async (content: string) => {
+      // Pass content directly to handleSend
+      return handleSend(undefined, content);
+    },
+    [handleSend],
+  );
+
+  // Map web app context to BotConfig for shared component
+  const {
+    displayName,
+    description,
+    placeholder,
+    primaryColor,
+    avatarUrl,
+    headerStyle,
+    messageStyle,
+    enableFeedback,
+    enableFileUpload,
+    enableSound,
+  } = useWebchatContext();
+
+  const botConfig: BotConfig = {
+    id: botProfile?._id || "preview",
+    organizationId: "web-app",
+    profile: {
+      displayName: displayName || "Support Bot",
+      description: description || "",
+      placeholder: placeholder || "Type your message...",
+      avatarUrl: avatarUrl || undefined,
+    },
+    appearance: {
+      primaryColor,
+      font: (font as "inter" | "roboto" | "system") || "inter",
+      themeMode,
+      cornerRadius,
+      headerStyle,
+      messageStyle,
+    },
+    features: {
+      enableFeedback,
+      enableFileUpload,
+      enableSound,
+      enableMarkdown: true,
+    },
   };
 
-  // Theme colors
-  const bgColor = themeMode === "light" ? "bg-white" : "bg-zinc-900";
+  // Create mock session for shared component
+  const session: ChatSession = {
+    id: sessionId || "preview-session",
+    organizationId: "web-app",
+    botId: botProfile?._id || "preview",
+    visitorId: "admin-test",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  // Convert ConvexMessage to shared Message type
+  const convertedMessages: Message[] = useMemo(
+    () =>
+      displayMessages.map((msg) => ({
+        id: msg._id || msg.id,
+        role: msg.role as "user" | "bot",
+        content: msg.content,
+        createdAt: msg.timestamp.toISOString(),
+        timestamp: msg.timestamp,
+      })),
+    [displayMessages],
+  );
+
+  const GRID_BG_SVG =
+    "data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' width='16' height='16' fill='none' stroke='white'%3e%3cpath d='M0 .5H16V16'/%3e%3c/svg%3e";
 
   return (
     <div
@@ -289,535 +323,39 @@ export function BotWidget({ className }: BotWidgetProps) {
           isOpen
             ? "scale-100 opacity-100 translate-y-0"
             : "scale-90 opacity-0 translate-y-20 pointer-events-none absolute",
-          bgColor,
         )}
-        style={{
-          borderRadius: `${cornerRadius}px`,
-          fontFamily: getFontFamily(),
-        }}
       >
-        <WidgetHeader onRefresh={handleRestart} isLoading={isLoadingSession} />
-
-        <ChatArea
-          messages={displayMessages}
-          scrollRef={scrollRef}
-          isLoadingSession={isLoadingSession}
-        />
-
-        <WidgetFooter
-          input={input}
-          onInputChange={setInput}
-          onSend={handleSend}
-          isLoading={isSendingMessage || isLoadingSession}
+        <ChatContainer
+          botConfig={botConfig}
+          session={session}
+          messages={convertedMessages}
+          isLoading={isLoadingSession}
           isStreaming={isStreaming}
-          onCancelStream={handleCancelStream}
+          error={null}
+          onSendMessage={handleSendMessage}
+          onClose={() => setIsOpen(false)}
         />
       </div>
 
-      <FloatingButton isOpen={isOpen} onClick={() => setIsOpen(!isOpen)} />
-    </div>
-  );
-}
-
-interface WidgetHeaderProps {
-  onRefresh: () => void;
-  isLoading: boolean;
-}
-
-function WidgetHeader({ onRefresh, isLoading }: WidgetHeaderProps) {
-  const {
-    displayName,
-    primaryColor,
-    avatarUrl,
-    headerStyle,
-    themeMode,
-    enableSound,
-  } = useWebchatContext();
-
-  const nameToDisplay = displayName || "Support Bot";
-
-  // Apply headerStyle logic
-  const headerBgColor =
-    headerStyle === "branded"
-      ? primaryColor
-      : themeMode === "light"
-        ? "#FFFFFF"
-        : "#18181B";
-  const headerTextColor =
-    headerStyle === "branded"
-      ? "#FFFFFF"
-      : themeMode === "light"
-        ? "#000000"
-        : "#F4F4F5";
-  const headerBorderColor = themeMode === "light" ? "#E4E4E7" : "#27272A";
-
-  return (
-    <div
-      className="flex items-center justify-between px-5 py-4 z-20 border-b"
-      style={{
-        backgroundColor: headerBgColor,
-        color: headerTextColor,
-        borderColor: headerBorderColor,
-      }}
-    >
-      <div className="flex items-center gap-3">
-        <Avatar className="h-9 w-9 border border-white/20">
-          <AvatarImage src={avatarUrl} />
-          <AvatarFallback
-            className="text-white text-xs font-semibold"
-            style={{ backgroundColor: primaryColor }}
-          >
-            {nameToDisplay.charAt(0).toUpperCase()}
-          </AvatarFallback>
-        </Avatar>
-        <div className="flex flex-col">
-          <span
-            className="text-sm font-semibold leading-none"
-            style={{ color: headerTextColor }}
-          >
-            {nameToDisplay}
-          </span>
-          <span
-            className="text-[10px] font-medium mt-1 flex items-center gap-1"
-            style={{
-              color:
-                headerStyle === "branded"
-                  ? "rgba(255,255,255,0.7)"
-                  : themeMode === "light"
-                    ? "#999999"
-                    : "#A1A1A6",
-            }}
-          >
-            <span className="block h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
-            Online
-          </span>
-        </div>
-      </div>
-      <div className="flex items-center">
-        {/* Sound Icon */}
-        {enableSound && (
-          <>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="rounded-full h-8 w-8 transition-all duration-300 ease-in-out overflow-hidden"
-              style={{
-                color: headerTextColor,
-              }}
-            >
-              <Volume2 className="h-4 w-4" />
-            </Button>
-            <div
-              className="h-4 w-[1px] mx-1 transition-all duration-300"
-              style={{
-                backgroundColor:
-                  themeMode === "light"
-                    ? "rgba(0,0,0,0.1)"
-                    : "rgba(255,255,255,0.1)",
-              }}
-            />
-          </>
-        )}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="rounded-full h-8 w-8 transition-colors"
+      <div className="absolute bottom-12 right-[110px] z-30">
+        <button
+          onClick={() => setIsOpen(!isOpen)}
+          className="h-16 w-16 rounded-full transition-all duration-300 hover:scale-110 active:scale-95 shadow-[0_15px_30px_-10px_rgba(0,0,0,0.3)]"
           style={{
-            color: headerTextColor,
+            backgroundColor: primaryColor,
+            boxShadow: `0 10px 25px -5px ${primaryColor}80`,
           }}
-          onClick={onRefresh}
-          disabled={isLoading}
+          aria-label="Toggle chat widget"
         >
-          <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin")} />
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-interface ChatAreaProps {
-  messages: Message[];
-  scrollRef: React.RefObject<HTMLDivElement | null>;
-  isLoadingSession: boolean;
-}
-
-function ChatArea({ messages, scrollRef, isLoadingSession }: ChatAreaProps) {
-  const { primaryColor, displayName, avatarUrl, themeMode } =
-    useWebchatContext();
-
-  const nameToDisplay = displayName || "Support Bot";
-  const contentSubBgColor =
-    themeMode === "light" ? "bg-zinc-50/50" : "bg-zinc-800/50";
-  const textSecondaryColor =
-    themeMode === "light" ? "text-zinc-400" : "text-zinc-500";
-
-  if (isLoadingSession) {
-    return (
-      <div
-        className={cn(
-          "flex-1 overflow-hidden w-full relative h-0 flex items-center justify-center",
-          contentSubBgColor,
-        )}
-      >
-        <div className="flex flex-col items-center gap-2">
-          <Loader2 className="h-5 w-5 animate-spin text-blue-500" />
-          <p className={cn("text-xs font-medium", textSecondaryColor)}>
-            Loading Configuration...
-          </p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div
-      className={cn(
-        "flex-1 overflow-hidden w-full relative h-0",
-        contentSubBgColor,
-      )}
-    >
-      <ScrollArea className={cn("h-full w-full relative", contentSubBgColor)}>
-        <div className="flex flex-col gap-6 p-5">
-          {messages.length < 5 && (
-            <div className="flex flex-col items-center justify-center gap-2 py-8 transition-all duration-500 ">
-              <Avatar className="h-20 w-20 mb-2 shadow-sm">
-                <AvatarImage src={avatarUrl} />
-                <AvatarFallback
-                  className="text-white text-3xl font-bold"
-                  style={{ backgroundColor: primaryColor }}
-                >
-                  {nameToDisplay.charAt(0).toUpperCase()}
-                </AvatarFallback>
-              </Avatar>
-              <p className={cn("text-xs font-medium", textSecondaryColor)}>
-                Powered by Chattify
-              </p>
-              <p className={cn("text-[10px]", textSecondaryColor)}>
-                (Playground Mode)
-              </p>
-            </div>
-          )}
-
-          {messages.map((msg) => (
-            <MessageBubble
-              key={msg._id || msg.id}
-              message={msg}
-              primaryColor={primaryColor}
-              botName={nameToDisplay}
-              botAvatar={avatarUrl}
-            />
-          ))}
-          <div ref={scrollRef} className="h-2" />
-        </div>
-      </ScrollArea>
-    </div>
-  );
-}
-
-interface MessageBubbleProps {
-  message: Message;
-  primaryColor: string;
-  botName: string;
-  botAvatar?: string;
-}
-
-function MessageBubble({
-  message,
-  primaryColor,
-  botName,
-  botAvatar,
-}: MessageBubbleProps) {
-  const { messageStyle, cornerRadius, themeMode, enableFeedback } =
-    useWebchatContext();
-  const isBot = message.role === "bot";
-
-  // Theme colors for bubbles
-  const botBubbleBgColor = themeMode === "light" ? "#FFFFFF" : "#27272A";
-  const botBubbleTextColor = themeMode === "light" ? "#18181B" : "#F4F4F5";
-  const botBubbleBorderColor = themeMode === "light" ? "#E4E4E7" : "#3F3F46";
-  const textSecondaryColor = themeMode === "light" ? "#71717A" : "#A1A1A6";
-
-  const getBubbleRadius = () => `${cornerRadius * 0.75}px`;
-
-  return (
-    <div
-      className={cn(
-        "flex w-full flex-col gap-1 animate-in fade-in slide-in-from-bottom-2 duration-300",
-        isBot ? "items-start" : "items-end",
-      )}
-    >
-      <div
-        className={cn(
-          "flex max-w-[80%] gap-2",
-          isBot ? "flex-row" : "flex-row-reverse",
-        )}
-      >
-        {isBot && (
-          <Avatar className="h-6 w-6 mt-1 flex-shrink-0 border border-zinc-100">
-            <AvatarImage src={botAvatar} />
-            <AvatarFallback
-              style={{ backgroundColor: primaryColor }}
-              className="text-[9px] text-white"
-            >
-              {botName.charAt(0)}
-            </AvatarFallback>
-          </Avatar>
-        )}
-
-        <div
-          className={cn(
-            "px-4 py-2.5 text-[14px] shadow-sm leading-relaxed break-words",
-            messageStyle === "filled"
-              ? isBot
-                ? "rounded-2xl rounded-tl-sm border"
-                : "text-white rounded-2xl rounded-tr-sm"
-              : isBot
-                ? "rounded-2xl rounded-tl-sm border bg-transparent"
-                : "rounded-2xl rounded-tr-sm border bg-transparent",
-          )}
-          style={
-            isBot
-              ? {
-                  backgroundColor:
-                    messageStyle === "filled"
-                      ? botBubbleBgColor
-                      : "transparent",
-                  color: botBubbleTextColor,
-                  borderColor: botBubbleBorderColor,
-                  borderWidth: "1px",
-                  borderRadius: getBubbleRadius(),
-                  borderTopLeftRadius: `${cornerRadius * 0.15}px`,
-                }
-              : messageStyle === "filled"
-                ? {
-                    backgroundColor: primaryColor,
-                    borderRadius: getBubbleRadius(),
-                    borderTopRightRadius: `${cornerRadius * 0.15}px`,
-                  }
-                : {
-                    borderColor: primaryColor,
-                    color: primaryColor,
-                    borderRadius: getBubbleRadius(),
-                    borderTopRightRadius: `${cornerRadius * 0.15}px`,
-                  }
-          }
-        >
-          {isBot ? (
-            <Markdown content={message.content} className="text-xs" />
-          ) : (
-            message.content
-          )}
-        </div>
-      </div>
-
-      {/* Feedback Icons for Bot Messages */}
-      {isBot && enableFeedback && (
-        <div className="flex gap-2 ml-9 transition-all duration-300">
-          <button
-            className="p-1 rounded hover:bg-zinc-800/50 transition-colors"
-            style={{ color: textSecondaryColor }}
-            aria-label="Like message"
+          <div
+            className={`transition-transform duration-300 ${
+              isOpen ? "rotate-180" : "rotate-0"
+            }`}
           >
-            <ThumbsUp className="h-4 w-4" />
-          </button>
-          <button
-            className="p-1 rounded hover:bg-zinc-800/50 transition-colors"
-            style={{ color: textSecondaryColor }}
-            aria-label="Dislike message"
-          >
-            <ThumbsDown className="h-4 w-4" />
-          </button>
-        </div>
-      )}
-
-      <span
-        className={cn("text-[10px] px-1", isBot ? "ml-9" : "mr-1")}
-        style={{ color: textSecondaryColor }}
-      >
-        {message.timestamp.toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-        })}
-      </span>
-    </div>
-  );
-}
-
-interface WidgetFooterProps {
-  input: string;
-  onInputChange: (value: string) => void;
-  onSend: (e?: React.FormEvent) => void;
-  isLoading: boolean;
-  isStreaming?: boolean;
-  onCancelStream?: () => void;
-}
-
-function WidgetFooter({
-  input,
-  onInputChange,
-  onSend,
-  isLoading,
-  isStreaming,
-  onCancelStream,
-}: WidgetFooterProps) {
-  const {
-    primaryColor,
-    placeholder,
-    themeMode,
-    cornerRadius,
-    enableFileUpload,
-  } = useWebchatContext();
-
-  const placeholderText = placeholder || "Type your message...";
-  const inputBgColor = themeMode === "light" ? "bg-white" : "bg-zinc-800";
-  const inputBorderColor =
-    themeMode === "light" ? "border-zinc-300" : "border-zinc-700";
-  const inputTextColor =
-    themeMode === "light" ? "text-zinc-900" : "text-zinc-100";
-  const inputPlaceholderColor =
-    themeMode === "light"
-      ? "placeholder:text-zinc-400"
-      : "placeholder:text-zinc-500";
-  const footerBgColor = themeMode === "light" ? "bg-white" : "bg-zinc-900";
-  const powerBgColor = themeMode === "light" ? "#4B5563" : "#A1A1A6";
-  const iconColor = themeMode === "light" ? "text-zinc-400" : "text-zinc-500";
-
-  return (
-    <div className="p-4 z-20" style={{ backgroundColor: footerBgColor }}>
-      <form
-        onSubmit={onSend}
-        className="relative flex items-center w-full gap-2"
-      >
-        {/* File Upload Icon */}
-        {enableFileUpload && (
-          <button
-            type="button"
-            className={cn(
-              "p-2 rounded-lg transition-colors hover:bg-zinc-700/50 disabled:opacity-50",
-              iconColor,
-            )}
-            aria-label="Upload file"
-            disabled={isLoading}
-          >
-            <Plus className="h-5 w-5" />
-          </button>
-        )}
-
-        <Input
-          value={input}
-          onChange={(e) => onInputChange(e.target.value)}
-          placeholder={placeholderText}
-          className={cn(
-            "flex-1 h-12 transition-all duration-200 border",
-            inputPlaceholderColor,
-            themeMode === "light" && "!bg-white text-zinc-900",
-          )}
-          style={{
-            backgroundColor: themeMode === "light" ? "white" : inputBgColor,
-            color: themeMode === "light" ? "#18181B" : inputTextColor,
-            borderColor: input.trim() ? primaryColor : inputBorderColor,
-            borderRadius: `${cornerRadius * 0.5}px`,
-          }}
-          onFocus={(e) => {
-            e.currentTarget.style.borderColor = primaryColor;
-          }}
-          onBlur={(e) => {
-            e.currentTarget.style.borderColor = input.trim()
-              ? primaryColor
-              : inputBorderColor;
-          }}
-          disabled={isLoading}
-        />
-
-        <div className="relative">
-          {isStreaming ? (
-            <Button
-              type="button"
-              size="icon"
-              className="h-9 w-9 transition-all duration-200 shadow-sm text-white bg-red-500 hover:bg-red-600"
-              onClick={onCancelStream}
-              aria-label="Cancel stream"
-            >
-              <X className="h-5 w-5" />
-            </Button>
-          ) : input.trim() ? (
-            <Button
-              type="submit"
-              size="icon"
-              className="h-9 w-9 transition-all duration-200 shadow-sm text-white disabled:opacity-50"
-              style={{
-                backgroundColor: primaryColor,
-                borderRadius: `${cornerRadius * 0.3}px`,
-              }}
-              disabled={isLoading}
-            >
-              {isLoading ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
-              ) : (
-                <ArrowUp className="h-5 w-5" />
-              )}
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-9 w-9"
-              style={{
-                color: themeMode === "light" ? "#D4D4D8" : "#71717A",
-              }}
-              disabled={isLoading}
-            >
-              <Mic className="h-5 w-5" />
-            </Button>
-          )}
-        </div>
-      </form>
-
-      <div
-        className="mt-3 flex items-center justify-center gap-1.5 text-[10px] font-medium"
-        style={{ color: powerBgColor }}
-      >
-        <span className="text-yellow-500">⚡</span>
-        <span>Powered by Chattify</span>
+            {isOpen ? "▼" : "💬"}
+          </div>
+        </button>
       </div>
-    </div>
-  );
-}
-
-interface FloatingButtonProps {
-  isOpen: boolean;
-  onClick: () => void;
-}
-
-function FloatingButton({ isOpen, onClick }: FloatingButtonProps) {
-  const { primaryColor } = useWebchatContext();
-
-  return (
-    // 'right-[110px]': horizontal position. 'bottom-12': vertical position
-    <div className="absolute bottom-12 right-[110px] z-30">
-      <Button
-        size="lg"
-        // - h-16 w-16: Size of icons
-        // - shadow-[...]: Custom shadow for 'pop out'.
-        className="h-16 w-16 rounded-full transition-all duration-300 hover:scale-110 active:scale-95 shadow-[0_15px_30px_-10px_rgba(0,0,0,0.3)]"
-        style={{
-          backgroundColor: primaryColor,
-          // Add shadow with primary color for a glowing effect (optional, but cool)
-          boxShadow: `0 10px 25px -5px ${primaryColor}80`,
-        }}
-        onClick={onClick}
-      >
-        <div
-          className={`transition-transform duration-300 ${isOpen ? "rotate-180" : "rotate-0"}`}
-        >
-          {isOpen ? (
-            <ChevronDown className="h-8 w-8 text-white" />
-          ) : (
-            <MessageSquare className="h-7 w-7 text-white" fill="currentColor" />
-          )}
-        </div>
-      </Button>
     </div>
   );
 }

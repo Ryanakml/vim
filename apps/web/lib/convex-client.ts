@@ -81,6 +81,30 @@ export function useConversations(botId?: Id<"botProfiles"> | "skip") {
 }
 
 /**
+ * Hook to fetch admin's own test conversations (conversations where user_id === admin)
+ * ✅ Used for "My Testing" tab in admin dashboard
+ * Pass botId to fetch, or pass "skip" to skip the query
+ */
+export function useAdminConversations(botId?: Id<"botProfiles"> | "skip") {
+  return useQuery(
+    api.monitor.getAdminConversations,
+    botId && botId !== "skip" ? { botId } : "skip",
+  );
+}
+
+/**
+ * Hook to fetch public visitor conversations (conversations with visitor_id, no user_id)
+ * ✅ Used for "Visitor Chats" tab in admin dashboard
+ * Pass botId to fetch, or pass "skip" to skip the query
+ */
+export function usePublicConversations(botId?: Id<"botProfiles"> | "skip") {
+  return useQuery(
+    api.monitor.getPublicConversations,
+    botId && botId !== "skip" ? { botId } : "skip",
+  );
+}
+
+/**
  * Hook to fetch all messages in a conversation
  * Pass conversationId to fetch, or pass "skip" to skip the query
  */

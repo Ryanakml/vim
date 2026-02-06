@@ -35,6 +35,9 @@ export default defineSchema({
     system_prompt: v.optional(v.string()),
     temperature: v.optional(v.number()),
     max_tokens: v.optional(v.number()),
+    embed_token: v.optional(v.string()), // Token for embed script deployment
+    embed_token_created_at: v.optional(v.number()), // Timestamp when embed token was created
+    embed_token_domain: v.optional(v.string()), // Domain where embed token is deployed
 
     // Metadata
     created_at: v.number(),
@@ -47,6 +50,8 @@ export default defineSchema({
   conversations: defineTable({
     // ✅ Multi-tenancy: Isolate conversations by owner (bot creator)
     user_id: v.optional(v.string()), // Clerk user ID (bot owner/creator)
+    organization_id: v.optional(v.string()), // Organization ID for public lookups
+    visitor_id: v.optional(v.string()), // Anonymous visitor ID for public chats
 
     bot_id: v.id("botProfiles"),
     // Note: This user_id refers to the chat participant, not the bot owner
@@ -61,12 +66,15 @@ export default defineSchema({
     .index("by_status", ["status"])
     .index("by_user_id", ["user_id"])
     .index("by_bot_id", ["bot_id"])
-    .index("by_user_bot", ["user_id", "bot_id"]),
+    .index("by_user_bot", ["user_id", "bot_id"])
+    .index("by_bot_and_visitor", ["bot_id", "visitor_id"])
+    .index("by_organization", ["organization_id"]),
 
   // Tabel 3: Messages (Isi Chat)
   messages: defineTable({
     // ✅ Multi-tenancy: Isolate messages by bot owner
     user_id: v.optional(v.string()), // Clerk user ID (bot owner)
+    visitor_id: v.optional(v.string()), // Anonymous visitor ID (for public chats)
 
     conversation_id: v.id("conversations"),
     participant_id: v.optional(v.id("users")), // End user in the chat
@@ -76,7 +84,8 @@ export default defineSchema({
   })
     .index("by_conversation", ["conversation_id"])
     .index("by_user_id", ["user_id"])
-    .index("by_user_created", ["user_id", "created_at"]),
+    .index("by_user_created", ["user_id", "created_at"])
+    .index("by_visitor", ["visitor_id"]),
 
   // Tabel 4: Documents (Knowledge Base Snippets)
   documents: defineTable({
@@ -130,4 +139,20 @@ export default defineSchema({
     .index("by_botId_createdAt", ["botId", "createdAt"])
     .index("by_user_id", ["user_id"])
     .index("by_user_createdAt", ["user_id", "createdAt"]),
+
+  // Tabel 7: Public Sessions (Stateless public chat tokens)
+  // ✅ Used for public widget authentication (no Clerk required)
+  // Validates: organizationId, botId, visitorId in a single lookup
+  // Prevents unauthorized access to public visitor conversations
+  publicSessions: defineTable({
+    organizationId: v.string(), // Organization owning the bot
+    botId: v.string(), // Bot ID (stored as string for public access)
+    visitorId: v.string(), // Unique visitor identifier
+    conversationId: v.id("conversations"), // Reference to actual conversation
+    createdAt: v.number(),
+    status: v.optional(v.string()), // "active" or "ended"
+    endedAt: v.optional(v.string()), // ISO timestamp when session ended
+  })
+    .index("by_session_lookup", ["organizationId", "botId", "visitorId"])
+    .index("by_conversation", ["conversationId"]),
 });

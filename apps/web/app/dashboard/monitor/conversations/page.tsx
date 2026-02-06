@@ -23,29 +23,49 @@ import {
   DropdownMenuSeparator,
   DropdownMenuLabel,
 } from "@workspace/ui/components/dropdown-menu";
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@workspace/ui/components/tabs";
 import { Check } from "lucide-react";
 import { cn } from "@workspace/ui/lib/utils";
 import {
   useConversations,
   useBotProfile,
   useConversationMessages,
+  useAdminConversations,
+  usePublicConversations,
   type Message,
 } from "@/lib/convex-client";
 import type { Id } from "@workspace/backend/convex/_generated/dataModel";
 
 export default function ConversationsPage() {
-  // Get bot profile and conversations
+  // Get bot profile
   const botProfile = useBotProfile();
-  const rawConversations = useConversations(botProfile?._id);
+
+  // ✅ Get admin conversations (my testing)
+  const adminConversations = useAdminConversations(botProfile?._id);
+
+  // ✅ Get visitor conversations (public chats)
+  const publicConversations = usePublicConversations(botProfile?._id);
 
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [activeTab, setActiveTab] = useState<"my-testing" | "visitor-chats">(
+    "my-testing",
+  );
 
   // 1. STATE UNTUK FILTER
   // Opsinya: 'all', 'active', 'closed'
   const [filterStatus, setFilterStatus] = useState<"all" | "active" | "closed">(
     "all",
   );
+
+  // ✅ Get conversations based on active tab
+  const rawConversations =
+    activeTab === "my-testing" ? adminConversations : publicConversations;
 
   // Sort conversations by most recent first (descending by last_message_at)
   const conversations = rawConversations
@@ -98,169 +118,204 @@ export default function ConversationsPage() {
           </Button>
         </div>
 
-        {/* Search Input */}
-        <div className="p-3 border-b border-zinc-800/50">
-          <div className="relative">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-zinc-500" />
-            <Input
-              placeholder="Search conversations..."
-              className="pl-8 h-9 bg-zinc-800 border-zinc-700 text-sm text-zinc-100 placeholder:text-zinc-500"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
-        </div>
-
-        {/* Filter Bar */}
-        <div className="p-3">
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                className="w-full justify-between text-zinc-400 hover:text-white hover:bg-zinc-800 px-2 h-9"
-              >
-                <div className="flex items-center">
-                  <Filter className="mr-2 h-4 w-4" />
-                  <span className="capitalize">
-                    {filterStatus === "all" ? "All Chats" : filterStatus}
-                  </span>
-                </div>
-                {/* Indikator kecil kalau sedang difilter */}
-                {filterStatus !== "all" && (
-                  <span className="flex h-2 w-2 rounded-full bg-blue-600" />
-                )}
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="start"
-              className="w-[280px] bg-[#0c0c0e] border-zinc-800 text-zinc-300"
+        {/* ✅ TAB SELECTION: My Testing vs Visitor Chats */}
+        <Tabs
+          value={activeTab}
+          onValueChange={(value) =>
+            setActiveTab(value as "my-testing" | "visitor-chats")
+          }
+          className="flex flex-col flex-1 overflow-hidden"
+        >
+          <TabsList className="w-full justify-start gap-0 rounded-none border-b border-zinc-800/50 bg-transparent p-0 h-auto">
+            <TabsTrigger
+              value="my-testing"
+              className="rounded-none border-b-2 border-transparent data-[state=active]:border-blue-500 data-[state=active]:bg-transparent px-4 py-3 text-sm font-medium text-zinc-400 hover:text-white data-[state=active]:text-white"
             >
-              <DropdownMenuLabel className="text-xs text-zinc-500 font-normal uppercase tracking-wider">
-                Filter by Status
-              </DropdownMenuLabel>
+              My Testing
+            </TabsTrigger>
+            <TabsTrigger
+              value="visitor-chats"
+              className="rounded-none border-b-2 border-transparent data-[state=active]:border-blue-500 data-[state=active]:bg-transparent px-4 py-3 text-sm font-medium text-zinc-400 hover:text-white data-[state=active]:text-white"
+            >
+              Visitor Chats
+            </TabsTrigger>
+          </TabsList>
 
-              <DropdownMenuItem
-                onClick={() => setFilterStatus("all")}
-                className="cursor-pointer focus:bg-zinc-800 focus:text-white justify-between"
-              >
-                All Chats
-                {filterStatus === "all" && (
-                  <Check className="h-4 w-4 text-blue-500" />
-                )}
-              </DropdownMenuItem>
-
-              <DropdownMenuItem
-                onClick={() => setFilterStatus("active")}
-                className="cursor-pointer focus:bg-zinc-800 focus:text-white justify-between"
-              >
-                Open / Active
-                {filterStatus === "active" && (
-                  <Check className="h-4 w-4 text-green-500" />
-                )}
-              </DropdownMenuItem>
-
-              <DropdownMenuItem
-                onClick={() => setFilterStatus("closed")}
-                className="cursor-pointer focus:bg-zinc-800 focus:text-white justify-between"
-              >
-                Closed
-                {filterStatus === "closed" && (
-                  <Check className="h-4 w-4 text-zinc-500" />
-                )}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </div>
-
-        {/* Conversation List */}
-        <ScrollArea className="flex-1 overflow-hidden">
-          <div className="flex flex-col w-full">
-            {!botProfile || conversations === undefined ? (
-              // ... (Loading state code tetap sama) ...
-              <div className="flex items-center justify-center py-8">
-                <Loader2 className="h-4 w-4 animate-spin text-zinc-500" />
+          {/* ✅ TAB CONTENT: Search & Filter (same for both tabs) */}
+          <TabsContent
+            value={activeTab}
+            className="flex flex-col flex-1 overflow-hidden"
+          >
+            {/* Search Input */}
+            <div className="p-3 border-b border-zinc-800/50">
+              <div className="relative">
+                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-zinc-500" />
+                <Input
+                  placeholder="Search conversations..."
+                  className="pl-8 h-9 bg-zinc-800 border-zinc-700 text-sm text-zinc-100 placeholder:text-zinc-500"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
               </div>
-            ) : conversations === null || conversations.length === 0 ? (
-              // ... (Empty state code tetap sama) ...
-              <div className="p-4 text-center">
-                <p className="text-sm text-zinc-500">No conversations yet</p>
-              </div>
-            ) : (
-              conversations.map((conv) => {
-                // Cek apakah statusnya closed
-                const isClosed = conv.status === "closed";
+            </div>
 
-                return (
-                  <div
-                    key={conv._id}
-                    onClick={() => setSelectedId(conv._id)}
-                    className={cn(
-                      "flex items-start gap-3 p-4 cursor-pointer border-l-2 transition-all duration-200", // duration-200 biar smooth
-
-                      // 1. Logic Selection (Active/Inactive Background)
-                      selectedId === conv._id
-                        ? "bg-zinc-800/60 border-blue-500"
-                        : "border-transparent hover:bg-zinc-800/50",
-
-                      // 2. Logic Closed (Gaya Proactive: Gelap & Grayscale)
-                      // Kita terapkan jika closed DAN tidak sedang dipilih (biar kalau lagi baca isinya tetap terang)
-                      // Atau kalau mau selalu gelap meski dipilih, hapus "&& selectedId !== conv._id"
-                      isClosed && selectedId !== conv._id
-                        ? "opacity-50 grayscale hover:opacity-100 hover:grayscale-0"
-                        : "opacity-100",
-                    )}
+            {/* Filter Bar */}
+            <div className="p-3">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    className="w-full justify-between text-zinc-400 hover:text-white hover:bg-zinc-800 px-2 h-9"
                   >
-                    {/* Avatar */}
-                    <Avatar className="h-10 w-10 mt-1">
-                      <AvatarFallback
+                    <div className="flex items-center">
+                      <Filter className="mr-2 h-4 w-4" />
+                      <span className="capitalize">
+                        {filterStatus === "all" ? "All Chats" : filterStatus}
+                      </span>
+                    </div>
+                    {/* Indikator kecil kalau sedang difilter */}
+                    {filterStatus !== "all" && (
+                      <span className="flex h-2 w-2 rounded-full bg-blue-600" />
+                    )}
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent
+                  align="start"
+                  className="w-[280px] bg-[#0c0c0e] border-zinc-800 text-zinc-300"
+                >
+                  <DropdownMenuLabel className="text-xs text-zinc-500 font-normal uppercase tracking-wider">
+                    Filter by Status
+                  </DropdownMenuLabel>
+
+                  <DropdownMenuItem
+                    onClick={() => setFilterStatus("all")}
+                    className="cursor-pointer focus:bg-zinc-800 focus:text-white justify-between"
+                  >
+                    All Chats
+                    {filterStatus === "all" && (
+                      <Check className="h-4 w-4 text-blue-500" />
+                    )}
+                  </DropdownMenuItem>
+
+                  <DropdownMenuItem
+                    onClick={() => setFilterStatus("active")}
+                    className="cursor-pointer focus:bg-zinc-800 focus:text-white justify-between"
+                  >
+                    Open / Active
+                    {filterStatus === "active" && (
+                      <Check className="h-4 w-4 text-green-500" />
+                    )}
+                  </DropdownMenuItem>
+
+                  <DropdownMenuItem
+                    onClick={() => setFilterStatus("closed")}
+                    className="cursor-pointer focus:bg-zinc-800 focus:text-white justify-between"
+                  >
+                    Closed
+                    {filterStatus === "closed" && (
+                      <Check className="h-4 w-4 text-zinc-500" />
+                    )}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+
+            {/* Conversation List */}
+            <ScrollArea className="flex-1 overflow-hidden">
+              <div className="flex flex-col w-full">
+                {!botProfile || conversations === undefined ? (
+                  // ... (Loading state code tetap sama) ...
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-4 w-4 animate-spin text-zinc-500" />
+                  </div>
+                ) : conversations === null || conversations.length === 0 ? (
+                  // ... (Empty state code tetap sama) ...
+                  <div className="p-4 text-center">
+                    <p className="text-sm text-zinc-500">
+                      No conversations yet
+                    </p>
+                  </div>
+                ) : (
+                  conversations.map((conv) => {
+                    // Cek apakah statusnya closed
+                    const isClosed = conv.status === "closed";
+
+                    return (
+                      <div
+                        key={conv._id}
+                        onClick={() => setSelectedId(conv._id)}
                         className={cn(
-                          "text-white text-xs font-semibold",
-                          // Kalau closed, warna avatar fallback jadi abu-abu juga (optional, karena parent udah grayscale)
-                          isClosed ? "bg-zinc-700" : "bg-blue-600",
+                          "flex items-start gap-3 p-4 cursor-pointer border-l-2 transition-all duration-200", // duration-200 biar smooth
+
+                          // 1. Logic Selection (Active/Inactive Background)
+                          selectedId === conv._id
+                            ? "bg-zinc-800/60 border-blue-500"
+                            : "border-transparent hover:bg-zinc-800/50",
+
+                          // 2. Logic Closed (Gaya Proactive: Gelap & Grayscale)
+                          // Kita terapkan jika closed DAN tidak sedang dipilih (biar kalau lagi baca isinya tetap terang)
+                          // Atau kalau mau selalu gelap meski dipilih, hapus "&& selectedId !== conv._id"
+                          isClosed && selectedId !== conv._id
+                            ? "opacity-50 grayscale hover:opacity-100 hover:grayscale-0"
+                            : "opacity-100",
                         )}
                       >
-                        {conv.user?.name?.[0]?.toUpperCase() || "U"}
-                      </AvatarFallback>
-                    </Avatar>
+                        {/* Avatar */}
+                        <Avatar className="h-10 w-10 mt-1">
+                          <AvatarFallback
+                            className={cn(
+                              "text-white text-xs font-semibold",
+                              // Kalau closed, warna avatar fallback jadi abu-abu juga (optional, karena parent udah grayscale)
+                              isClosed
+                                ? "bg-zinc-700"
+                                : activeTab === "visitor-chats"
+                                  ? "bg-purple-600"
+                                  : "bg-blue-600",
+                            )}
+                          >
+                            {conv.user?.name?.[0]?.toUpperCase() || "U"}
+                          </AvatarFallback>
+                        </Avatar>
 
-                    {/* Info */}
-                    <div className="flex-1 overflow-hidden">
-                      <div className="flex justify-between items-center mb-0.5">
-                        <span
-                          className={cn(
-                            "font-semibold text-sm truncate",
-                            isClosed ? "text-zinc-400" : "text-zinc-200",
-                          )}
-                        >
-                          {conv.user?.name || "Anonymous"}
-                        </span>
-                        <span className="text-[10px] text-zinc-500">
-                          {conv.last_message_at
-                            ? new Date(conv.last_message_at).toLocaleDateString(
-                                "en-US",
-                                {
-                                  month: "short",
-                                  day: "numeric",
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                },
-                              )
-                            : "Just now"}
-                        </span>
+                        {/* Info */}
+                        <div className="flex-1 overflow-hidden">
+                          <div className="flex justify-between items-center mb-0.5">
+                            <span
+                              className={cn(
+                                "font-semibold text-sm truncate",
+                                isClosed ? "text-zinc-400" : "text-zinc-200",
+                              )}
+                            >
+                              {conv.user?.name || "Anonymous"}
+                            </span>
+                            <span className="text-[10px] text-zinc-500">
+                              {conv.last_message_at
+                                ? new Date(
+                                    conv.last_message_at,
+                                  ).toLocaleDateString("en-US", {
+                                    month: "short",
+                                    day: "numeric",
+                                    hour: "2-digit",
+                                    minute: "2-digit",
+                                  })
+                                : "Just now"}
+                            </span>
+                          </div>
+                          <p className="text-xs text-zinc-500 truncate mb-1">
+                            {conv.topic || "No topic"}
+                          </p>
+                        </div>
+
+                        {/* Share Icon (Hover only ideally, but static for now) */}
+                        <Share2 className="h-4 w-4 text-zinc-600" />
                       </div>
-                      <p className="text-xs text-zinc-500 truncate mb-1">
-                        {conv.topic || "No topic"}
-                      </p>
-                    </div>
-
-                    {/* Share Icon (Hover only ideally, but static for now) */}
-                    <Share2 className="h-4 w-4 text-zinc-600" />
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </ScrollArea>
+                    );
+                  })
+                )}
+              </div>
+            </ScrollArea>
+          </TabsContent>
+        </Tabs>
       </aside>
 
       {/* --- MAIN CONTENT (Detail Conversation) --- */}
