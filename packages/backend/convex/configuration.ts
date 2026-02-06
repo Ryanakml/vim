@@ -7,7 +7,7 @@ import { query, mutation } from "./_generated/server.js";
  * Get bot configuration for the Configuration tab
  * Returns model provider, model ID, system prompt, temperature, max_tokens, api_key
  */
-export const getBotConfig = query({
+export const getBotConfig: ReturnType<typeof query> = query({
   handler: async (ctx) => {
     const profiles = await ctx.db.query("botProfiles").collect();
     const profile = profiles[0];
@@ -42,7 +42,7 @@ export const getBotConfig = query({
  * - max_tokens: optional number (only sent from Advanced tab)
  * - isAdvancedMode: boolean (indicates if user is saving from Advanced tab)
  */
-export const updateBotConfig = mutation({
+export const updateBotConfig: ReturnType<typeof mutation> = mutation({
   args: {
     model_provider: v.optional(v.string()),
     model_id: v.optional(v.string()),

@@ -215,7 +215,7 @@ export const generateBotResponse = action({
 
     // ===== STEP 1: Load Configuration =====
     console.log("[generateBotResponse] STEP 1: Loading bot configuration...");
-    const botConfig = await ctx.runQuery(api.configuration.getBotConfig);
+    const botConfig = await ctx.runQuery(api.configuration.getBotConfig, {});
 
     if (!botConfig) {
       const error = "Bot configuration not found";

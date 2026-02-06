@@ -1,4 +1,5 @@
 import { query } from "./_generated/server";
+import type { RegisteredQuery } from "convex/server";
 import type { Doc } from "./_generated/dataModel";
 
 /**
@@ -26,7 +27,11 @@ export type DashboardStats = {
  * - activeConversations: Count of conversations with "active" status
  * - latestConversations: Last 5 conversations sorted by desc, with participant & message count
  */
-export const getDashboardStats = query(async (ctx): Promise<DashboardStats> => {
+export const getDashboardStats: RegisteredQuery<
+  "public",
+  Record<string, never>,
+  Promise<DashboardStats>
+> = query(async (ctx): Promise<DashboardStats> => {
   // ✅ Get authenticated user
   const identity = await ctx.auth.getUserIdentity();
   if (!identity) {

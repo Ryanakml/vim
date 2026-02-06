@@ -21,7 +21,7 @@ export const generateEmbedding = internalAction({
       throw new Error("Text is required to generate embeddings");
     }
 
-    const botConfig = await ctx.runQuery(api.configuration.getBotConfig);
+    const botConfig = await ctx.runQuery(api.configuration.getBotConfig, {});
     // Determine API key based on bot configuration or environment variables
     const isGoogleProvider = botConfig?.model_provider === "Google AI";
     const dbKey = isGoogleProvider ? botConfig?.api_key : undefined;

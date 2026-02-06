@@ -56,7 +56,7 @@ export function useUpdateBotProfile() {
  * Returns configuration object with model_provider, model_id, system_prompt, temperature, max_tokens
  */
 export function useGetBotConfig() {
-  return useQuery(api.configuration.getBotConfig);
+  return useQuery(api.configuration.getBotConfig, {});
 }
 
 /**

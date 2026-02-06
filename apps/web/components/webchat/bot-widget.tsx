@@ -96,7 +96,7 @@ export function BotWidget({ className }: BotWidgetProps) {
         id: msg._id,
         role: msg.role as "user" | "bot",
         content: msg.content,
-        timestamp: new Date(msg.created_at),
+        createdAt: new Date(msg.created_at),
         _id: msg._id,
       }),
     );
@@ -116,7 +116,7 @@ export function BotWidget({ className }: BotWidgetProps) {
           id: streamingMessageId,
           role: "bot" as const,
           content: chunks.join(""), // Direct chunk rendering = no intermediate state
-          timestamp: new Date(),
+          createdAt: new Date(),
           _id: streamingMessageId,
         },
       ];
@@ -285,19 +285,6 @@ export function BotWidget({ className }: BotWidgetProps) {
     updatedAt: new Date().toISOString(),
   };
 
-  // Convert ConvexMessage to shared Message type
-  const convertedMessages: Message[] = useMemo(
-    () =>
-      displayMessages.map((msg) => ({
-        id: msg._id || msg.id,
-        role: msg.role as "user" | "bot",
-        content: msg.content,
-        createdAt: msg.timestamp.toISOString(),
-        timestamp: msg.timestamp,
-      })),
-    [displayMessages],
-  );
-
   const GRID_BG_SVG =
     "data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' width='16' height='16' fill='none' stroke='white'%3e%3cpath d='M0 .5H16V16'/%3e%3c/svg%3e";
 
@@ -328,7 +315,7 @@ export function BotWidget({ className }: BotWidgetProps) {
         <ChatContainer
           botConfig={botConfig}
           session={session}
-          messages={convertedMessages}
+          messages={displayMessages}
           isLoading={isLoadingSession}
           isStreaming={isStreaming}
           error={null}
