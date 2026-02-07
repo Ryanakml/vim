@@ -4,11 +4,10 @@ const nextConfig: NextConfig = {
   async headers() {
     return [
       {
-        // Izinkan semua rute (khususnya /widget) untuk di-embed
         source: "/:path*",
         headers: [
           { key: "Access-Control-Allow-Credentials", value: "true" },
-          { key: "Access-Control-Allow-Origin", value: "*" }, // Boleh diakses semua website
+          { key: "Access-Control-Allow-Origin", value: "*" },
           {
             key: "Access-Control-Allow-Methods",
             value: "GET,OPTIONS,PATCH,DELETE,POST,PUT",
@@ -19,6 +18,14 @@ const nextConfig: NextConfig = {
               "X-CSRF-Token, X-Requested-With, Accept, Accept-Version, Content-Length, Content-MD5, Content-Type, Date, X-Api-Version",
           },
         ],
+      },
+    ];
+  },
+  async rewrites() {
+    return [
+      {
+        source: "/embed.js",
+        destination: "/_next/static/embed.global.js",
       },
     ];
   },
