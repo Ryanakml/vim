@@ -44,8 +44,7 @@ interface BotProfileResponse {
   }
 
   // embed.ts
-  const WIDGET_URL =
-    process.env.NEXT_PUBLIC_WIDGET_URL || "http://localhost:3001";
+  const WIDGET_URL = "https://vim-widget.vercel.app";
   const VISITOR_STORAGE_KEY = "chatify_visitor_id";
   const DEFAULT_PRIMARY_COLOR = "#6366f1";
 
