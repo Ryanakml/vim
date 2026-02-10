@@ -113,8 +113,14 @@ const SOURCE_OPTIONS: SourceOption[] = [
 
 export function KnowledgeBaseSection({
   onDocumentSelect,
+  selectedDocumentId,
+  isSelected,
+  onSelectSection,
 }: {
   onDocumentSelect?: (doc: Doc<"documents">) => void;
+  selectedDocumentId?: string | null;
+  isSelected?: boolean;
+  onSelectSection?: () => void;
 } = {}) {
   const [open, setOpen] = useState(false);
   const [currentView, setCurrentView] = useState<SourceId | "selection">(
@@ -349,7 +355,15 @@ export function KnowledgeBaseSection({
   const activeSource = SOURCE_OPTIONS.find((s) => s.id === currentView);
 
   return (
-    <section className="rounded-xl border bg-card shadow-sm overflow-hidden">
+    <section
+      data-config-selectable="true"
+      onClick={() => onSelectSection?.()}
+      className={`rounded-xl border bg-card shadow-sm overflow-hidden transition-all ${
+        isSelected
+          ? "border-blue-600 bg-blue-900/10"
+          : "border-zinc-800 hover:border-zinc-700"
+      }`}
+    >
       {/* Header Panel */}
       <div className="flex items-center justify-between border-b bg-muted/40 p-6 pb-4">
         <div>
@@ -359,7 +373,13 @@ export function KnowledgeBaseSection({
           </p>
         </div>
         {documents.length > 0 && (
-          <Button size="sm" onClick={() => setOpen(true)}>
+          <Button
+            size="sm"
+            onClick={(e) => {
+              e.stopPropagation();
+              setOpen(true);
+            }}
+          >
             <Plus className="mr-2 h-4 w-4" /> Add Source
           </Button>
         )}
@@ -387,12 +407,17 @@ export function KnowledgeBaseSection({
             {documents.map((doc) => (
               <button
                 key={doc.id}
-                onClick={() => {
+                onClick={(e) => {
+                  e.stopPropagation();
                   if (onDocumentSelect && doc.fullDoc) {
                     onDocumentSelect(doc.fullDoc);
                   }
                 }}
-                className="w-full text-left rounded-md border border-zinc-800 bg-zinc-900/30 p-4 text-sm text-muted-foreground hover:bg-zinc-800/50 hover:border-zinc-700 transition-colors cursor-pointer"
+                className={`w-full text-left rounded-md border p-4 text-sm text-muted-foreground transition-colors cursor-pointer ${
+                  selectedDocumentId && selectedDocumentId === doc.id
+                    ? "border-blue-600 bg-blue-900/10"
+                    : "border-zinc-800 bg-zinc-900/30 hover:bg-zinc-800/50 hover:border-zinc-700"
+                }`}
               >
                 <div className="font-medium text-foreground mb-1">
                   {doc.title}

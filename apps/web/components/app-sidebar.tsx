@@ -15,6 +15,7 @@ import {
   SquareTerminal,
   ShoppingCart,
 } from "lucide-react";
+import { IconBrandTelegram } from "@tabler/icons-react";
 
 import { NavMain } from "@/components/nav-main";
 import { NavIntegrations } from "@/components/nav-projects";
@@ -106,9 +107,9 @@ const data = {
       icon: MessageCircle,
     },
     {
-      name: "Instagram",
-      url: "/dashboard/integrations/instagram",
-      icon: Instagram,
+      name: "Telegram",
+      url: "/dashboard/integrations/telegram",
+      icon: IconBrandTelegram,
     },
     {
       name: "Omnichannel",

@@ -44,6 +44,14 @@ export const endSession = mutation({
       endedAt: new Date().toISOString(),
     });
 
+    const conversation = await ctx.db.get(session.conversationId);
+    if (conversation && conversation.status !== "closed") {
+      await ctx.db.patch(session.conversationId, {
+        status: "closed",
+        updated_at: Date.now(),
+      });
+    }
+
     return { success: true };
   },
 });

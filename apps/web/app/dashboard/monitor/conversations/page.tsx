@@ -20,7 +20,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-  DropdownMenuSeparator,
   DropdownMenuLabel,
 } from "@workspace/ui/components/dropdown-menu";
 import {
@@ -32,7 +31,6 @@ import {
 import { Check } from "lucide-react";
 import { cn } from "@workspace/ui/lib/utils";
 import {
-  useConversations,
   useBotProfile,
   useConversationMessages,
   useAdminConversations,
@@ -345,27 +343,27 @@ export default function ConversationsPage() {
             <div className="px-6 py-6 border-b border-zinc-800 bg-[#09090b]">
               <div className="grid grid-cols-5 gap-8 text-sm">
                 {/* Col 1: Participants */}
-                <div className="space-y-2">
+                <div className="space-y-2 min-w-0">
                   <span className="text-zinc-500 text-xs font-medium block">
                     Participants
                   </span>
-                  <div className="flex items-center gap-2">
-                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold text-white bg-blue-600">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-bold text-white bg-blue-600 flex-shrink-0">
                       {selectedConversation.user?.name?.[0]?.toUpperCase() ||
                         "U"}
                     </span>
-                    <span className="text-zinc-300">
+                    <span className="text-zinc-300 min-w-0 break-all whitespace-normal">
                       {selectedConversation.user?.name || "Anonymous"}
                     </span>
                   </div>
                 </div>
 
                 {/* Col 2: Last Activity */}
-                <div className="space-y-2">
+                <div className="space-y-2 min-w-0">
                   <span className="text-zinc-500 text-xs font-medium block">
                     Last Activity
                   </span>
-                  <span className="text-zinc-300 block">
+                  <span className="text-zinc-300 block break-words whitespace-normal">
                     {selectedConversation.last_message_at
                       ? new Date(
                           selectedConversation.last_message_at,

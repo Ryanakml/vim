@@ -8,13 +8,13 @@ import {
   type BotConfig,
   type Message,
   type ChatSession,
+  type LeadClickPayload,
 } from "@workspace/ui/components/widget";
 import { useQuery, useMutation, useAction } from "convex/react";
 import { api } from "@/convex";
 import {
   notifyReady,
   notifyError,
-  notifyClose,
   notifyConfig,
 } from "@/lib/postmessage-bridge";
 
@@ -30,6 +30,7 @@ function WidgetContent() {
   const [error, setError] = useState<Error | null>(null);
   const [isStreaming, setIsStreaming] = useState(false);
   const [hydratedTheme, setHydratedTheme] = useState<string | null>(null);
+  const [isOnline, setIsOnline] = useState(false);
 
   // Fetch bot config
   const config = useQuery(
@@ -45,6 +46,9 @@ function WidgetContent() {
 
   // End session (for restart)
   const endSessionMutation = useMutation(api.public.endSession);
+
+  // Track lead events
+  const trackEventMutation = useMutation(api.public.trackEvent);
 
   // Generate AI reply (this is an ACTION, not a mutation)
   const generateReplyAction = useAction(api.public.generateReply);
@@ -67,20 +71,25 @@ function WidgetContent() {
     if (!orgId || !botId || !visitorId) {
       setError(new Error("Missing required parameters"));
       notifyError("Missing required parameters");
+      setIsOnline(false);
       return;
     }
 
     if (config) {
       const botConfigData = config as BotConfig;
       setBotConfig(botConfigData);
+      setIsOnline(true); // API key is configured, bot is online
 
       // Set theme mode immediately to prevent hydration flash
       if (!hydratedTheme) {
         setHydratedTheme(botConfigData.appearance.themeMode);
       }
 
-      // Notify parent iframe of primary color for launcher button
-      notifyConfig(botConfigData.appearance.primaryColor);
+      // Notify parent iframe of primary color and corner radius
+      notifyConfig(
+        botConfigData.appearance.primaryColor,
+        botConfigData.appearance.cornerRadius,
+      );
     }
   }, [orgId, botId, visitorId, config, hydratedTheme]);
 
@@ -119,7 +128,11 @@ function WidgetContent() {
             updatedAt: new Date().toISOString(),
           };
           setSession(sessionData);
-          notifyReady(newSession.sessionId, botConfig?.appearance.primaryColor);
+          notifyReady(
+            newSession.sessionId,
+            botConfig?.appearance.primaryColor,
+            botConfig?.appearance.cornerRadius,
+          );
           currentSession = sessionData;
         }
 
@@ -144,8 +157,17 @@ function WidgetContent() {
 
         console.log("[Widget] AI response generated and saved");
       } catch (err) {
+        const errorMessage = (err as Error).message;
+        console.error(
+          "[Widget] Error sending message or generating reply:",
+          errorMessage,
+        );
+
+        // If error is from Convex/AI generation, set offline
+        setIsOnline(false);
+
         setError(err as Error);
-        notifyError((err as Error).message);
+        notifyError(errorMessage);
       } finally {
         setIsStreaming(false);
       }
@@ -187,13 +209,30 @@ function WidgetContent() {
     setIsStreaming(false);
   }, [session, orgId, botId, endSessionMutation]);
 
-  /**
-   * Handle close: clear state and notify parent to hide iframe
-   */
-  const handleClose = useCallback(() => {
-    // Don't destroy session on close — user can reopen and continue
-    notifyClose();
-  }, []);
+  const handleLeadClick = useCallback(
+    async (payload: LeadClickPayload) => {
+      if (!session || !orgId || !botId || !visitorId) return;
+
+      const eventType =
+        payload.type === "whatsapp"
+          ? "lead_whatsapp_click"
+          : "lead_email_click";
+
+      try {
+        await trackEventMutation({
+          sessionId: session.id,
+          organizationId: orgId,
+          botId,
+          visitorId,
+          eventType,
+          href: payload.href,
+        });
+      } catch (err) {
+        console.warn("[Widget] Failed to track lead event:", err);
+      }
+    },
+    [session, orgId, botId, visitorId, trackEventMutation],
+  );
 
   // Error state
   if (error) {
@@ -248,8 +287,9 @@ function WidgetContent() {
         isStreaming={isStreaming}
         error={error}
         onSendMessage={handleSendMessage}
+        onLeadClick={handleLeadClick}
         onRefresh={handleRefresh}
-        onClose={handleClose}
+        isOnline={isOnline}
       />
     </div>
   );

@@ -54,23 +54,34 @@ export const getPlaygroundSession = query({
     botId: v.id("botProfiles"),
   },
   handler: async (ctx, args) => {
-    const allConversations = await ctx.db.query("conversations").collect();
-    const playgroundSession = allConversations.find(
-      (c) =>
-        c.bot_id === args.botId &&
-        c.integration === "playground" &&
-        c.status === "active",
+    // ✅ Add auth check
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthorized");
+    const userId = identity.subject;
+
+    // ✅ Use indexed query instead of collecting all conversations
+    const sessions = await ctx.db
+      .query("conversations")
+      .withIndex("by_user_bot", (q) =>
+        q.eq("user_id", userId).eq("bot_id", args.botId),
+      )
+      .collect();
+
+    const playgroundSession = sessions.find(
+      (c) => c.integration === "playground" && c.status === "active",
     );
 
     if (!playgroundSession) {
       return null;
     }
 
-    // Enrich with messages
-    const allMessages = await ctx.db.query("messages").collect();
-    const messages = allMessages.filter(
-      (m) => m.conversation_id === playgroundSession._id,
-    );
+    // ✅ Get messages via indexed query
+    const messages = await ctx.db
+      .query("messages")
+      .withIndex("by_conversation", (q) =>
+        q.eq("conversation_id", playgroundSession._id),
+      )
+      .collect();
 
     return {
       ...playgroundSession,
@@ -204,8 +215,24 @@ export const getPlaygroundMessages = query({
     sessionId: v.id("conversations"),
   },
   handler: async (ctx, args) => {
-    const allMessages = await ctx.db.query("messages").collect();
-    return allMessages.filter((m) => m.conversation_id === args.sessionId);
+    // ✅ Add auth check
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthorized");
+    const userId = identity.subject;
+
+    // ✅ Verify conversation ownership before returning messages
+    const conversation = await ctx.db.get(args.sessionId);
+    if (!conversation || conversation.user_id !== userId) {
+      throw new Error("Unauthorized: Cannot access this conversation");
+    }
+
+    // ✅ Use indexed query instead of collecting all messages
+    return await ctx.db
+      .query("messages")
+      .withIndex("by_conversation", (q) =>
+        q.eq("conversation_id", args.sessionId),
+      )
+      .collect();
   },
 });
 
@@ -418,7 +445,23 @@ export const getEmulatorMessages = query({
     sessionId: v.id("conversations"),
   },
   handler: async (ctx, args) => {
-    const allMessages = await ctx.db.query("messages").collect();
-    return allMessages.filter((m) => m.conversation_id === args.sessionId);
+    // ✅ Add auth check
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) throw new Error("Unauthorized");
+    const userId = identity.subject;
+
+    // ✅ Verify conversation ownership before returning messages
+    const conversation = await ctx.db.get(args.sessionId);
+    if (!conversation || conversation.user_id !== userId) {
+      throw new Error("Unauthorized: Cannot access this conversation");
+    }
+
+    // ✅ Use indexed query instead of collecting all messages
+    return await ctx.db
+      .query("messages")
+      .withIndex("by_conversation", (q) =>
+        q.eq("conversation_id", args.sessionId),
+      )
+      .collect();
   },
 });

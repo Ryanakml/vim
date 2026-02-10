@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   Upload,
   ImageIcon,
@@ -123,6 +123,9 @@ export default function BotProfilePage() {
                   <Image
                     src={avatarUrl}
                     alt="Avatar"
+                    width={128}
+                    height={128}
+                    sizes="128px"
                     className="h-full w-full rounded-2xl object-cover"
                   />
                 ) : (
@@ -229,12 +232,31 @@ function AvatarUploadModal({
   const [preview, setPreview] = useState<string | null>(currentAvatar || null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  useEffect(() => {
+    if (isOpen) setPreview(currentAvatar || null);
+  }, [isOpen, currentAvatar]);
+
+  const readImageAsDataUrl = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("Failed to read file"));
+      reader.onload = () => {
+        if (typeof reader.result === "string") resolve(reader.result);
+        else reject(new Error("Invalid file result"));
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      // Create local preview URL
-      const objectUrl = URL.createObjectURL(file);
-      setPreview(objectUrl);
+      if (!file.type.startsWith("image/")) return;
+      readImageAsDataUrl(file)
+        .then((dataUrl) => setPreview(dataUrl))
+        .catch(() => {
+          // keep previous preview if read fails
+        });
     }
   };
 
@@ -242,8 +264,11 @@ function AvatarUploadModal({
     e.preventDefault();
     const file = e.dataTransfer.files?.[0];
     if (file && file.type.startsWith("image/")) {
-      const objectUrl = URL.createObjectURL(file);
-      setPreview(objectUrl);
+      readImageAsDataUrl(file)
+        .then((dataUrl) => setPreview(dataUrl))
+        .catch(() => {
+          // keep previous preview if read fails
+        });
     }
   };
 
@@ -271,6 +296,9 @@ function AvatarUploadModal({
                 <Image
                   src={preview}
                   alt="Preview"
+                  width={128}
+                  height={128}
+                  sizes="128px"
                   className="h-full w-full object-cover"
                 />
               ) : (

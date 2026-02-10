@@ -1,16 +1,34 @@
 "use client";
 
-import { useState } from "react";
-import { Check, Copy, Image as ImageIcon } from "lucide-react";
+import { useMemo, useState } from "react";
+import { Copy, Image as ImageIcon } from "lucide-react";
 import { Button } from "@workspace/ui/components/button";
 import { Switch } from "@workspace/ui/components/switch";
 import { cn } from "@workspace/ui/lib/utils";
+import { useBotProfile } from "@/lib/convex-client";
 
-// Dummy script untuk simulasi embed code
-const EMBED_SCRIPT = `<script src="https://cdn.botpress.cloud/webchat/v3.5/inject.js"></script>
-<script src="https://files.bpcontent.cloud/2026/01/27/01/config.js"></script>`;
+const DEFAULT_WIDGET_EMBED_SRC =
+  process.env.NEXT_PUBLIC_WIDGET_EMBED_SRC ??
+  "https://vim-widget.vercel.app/embed.js";
 
 export default function DeploySettingsPage() {
+  const botProfile = useBotProfile();
+
+  const embedScript = useMemo(() => {
+    const organizationId = botProfile?.organization_id;
+    const botId = botProfile?._id;
+
+    if (!organizationId || !botId) return null;
+
+    return `<script
+  src="${DEFAULT_WIDGET_EMBED_SRC}"
+  data-organization-id="${organizationId}"
+  data-bot-id="${botId}"
+  data-position="bottom-right"
+  async
+></script>`;
+  }, [botProfile]);
+
   // --- STATE MANAGEMENT ---
   const [chatInterface, setChatInterface] = useState<"toggle" | "embedded">(
     "toggle",
@@ -23,7 +41,8 @@ export default function DeploySettingsPage() {
 
   // Fungsi copy to clipboard
   const handleCopy = () => {
-    navigator.clipboard.writeText(EMBED_SCRIPT);
+    if (!embedScript) return;
+    navigator.clipboard.writeText(embedScript);
     // Bisa tambah toast notification disini kalo mau
   };
 
@@ -61,15 +80,34 @@ export default function DeploySettingsPage() {
 
           <div className="relative group">
             <div className="w-full rounded-lg border border-zinc-800 bg-zinc-950 p-6 font-mono text-sm text-zinc-300 leading-relaxed overflow-x-auto">
-              {EMBED_SCRIPT.split("\n").map((line, i) => (
-                <div key={i}>{line}</div>
-              ))}
+              {botProfile === undefined && (
+                <div className="text-zinc-400">Loading embed code…</div>
+              )}
+
+              {botProfile === null && (
+                <div className="text-zinc-400">
+                  No bot profile found yet. Create/configure your bot first.
+                </div>
+              )}
+
+              {botProfile && !embedScript && (
+                <div className="text-zinc-400">
+                  Missing organization or bot ID. Make sure you are working
+                  inside a Clerk organization.
+                </div>
+              )}
+
+              {embedScript &&
+                embedScript
+                  .split("\n")
+                  .map((line, i) => <div key={i}>{line}</div>)}
             </div>
             <Button
               size="sm"
               variant="secondary"
               className="absolute top-4 right-4 h-8 bg-zinc-800 text-zinc-300 hover:text-white hover:bg-zinc-700"
               onClick={handleCopy}
+              disabled={!embedScript}
             >
               <Copy className="mr-2 h-3.5 w-3.5" />
               Copy
@@ -239,6 +277,11 @@ export default function DeploySettingsPage() {
             <span className="text-sm font-medium text-zinc-300">
               Use bot avatar
             </span>
+            <Switch
+              checked={useBotAvatar}
+              onCheckedChange={setUseBotAvatar}
+              className="data-[state=checked]:bg-blue-600"
+            />
             <div className="h-12 w-12 rounded-full border border-dashed border-zinc-700 bg-zinc-900/50 hover:bg-zinc-900 hover:border-zinc-500 flex items-center justify-center cursor-pointer transition-colors">
               <ImageIcon className="h-5 w-5 text-zinc-500" />
             </div>

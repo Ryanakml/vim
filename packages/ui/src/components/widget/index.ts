@@ -20,6 +20,7 @@ export type {
   BotAppearance,
   BotFeatures,
   Message,
+  LeadClickPayload,
   ChatSession,
   ChatContainerProps,
   ChatHeaderProps,

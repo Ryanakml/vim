@@ -1,7 +1,7 @@
 export type WidgetMessage =
   | {
       type: "widget:ready";
-      data: { sessionId: string; primaryColor?: string };
+      data: { sessionId: string; primaryColor?: string; cornerRadius?: number };
     }
   | {
       type: "widget:close";
@@ -12,7 +12,7 @@ export type WidgetMessage =
     }
   | {
       type: "widget:config";
-      data: { primaryColor: string };
+      data: { primaryColor: string; cornerRadius?: number };
     };
 
 export function sendToParent(message: WidgetMessage) {
@@ -24,20 +24,24 @@ export function sendToParent(message: WidgetMessage) {
 /**
  * Notify parent that widget is ready, optionally with primary color
  */
-export function notifyReady(sessionId: string, primaryColor?: string) {
+export function notifyReady(
+  sessionId: string,
+  primaryColor?: string,
+  cornerRadius?: number,
+) {
   sendToParent({
     type: "widget:ready",
-    data: { sessionId, primaryColor },
+    data: { sessionId, primaryColor, cornerRadius },
   });
 }
 
 /**
- * Notify parent of bot config (e.g. primary color for launcher button)
+ * Notify parent of bot config (e.g. primary color for launcher button, corner radius)
  */
-export function notifyConfig(primaryColor: string) {
+export function notifyConfig(primaryColor: string, cornerRadius?: number) {
   sendToParent({
     type: "widget:config",
-    data: { primaryColor },
+    data: { primaryColor, cornerRadius },
   });
 }
 

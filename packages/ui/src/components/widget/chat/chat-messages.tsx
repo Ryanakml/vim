@@ -31,6 +31,7 @@ export function ChatMessages({
   streamingContent,
   error,
   onFeedback,
+  onLeadClick,
 }: ChatMessagesProps) {
   const contentSubBgColor =
     themeMode === "light" ? "bg-zinc-50/50" : "bg-zinc-800/50";
@@ -97,6 +98,7 @@ export function ChatMessages({
               messageStyle={messageStyle}
               enableFeedback={enableFeedback}
               onFeedback={onFeedback}
+              onLeadClick={onLeadClick}
             />
           ))}
 
