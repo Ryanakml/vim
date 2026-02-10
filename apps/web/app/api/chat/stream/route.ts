@@ -143,7 +143,7 @@ export async function POST(request: NextRequest) {
       ? `${baseSystemPrompt}\n\n${escalationPrompt}`
       : baseSystemPrompt;
 
-    // Step 7: Initialize AI model (OpenAI, Groq, Google, etc.)
+    // Step 7: Initialize AI model (OpenAI, Groq, Google, Anthropic, etc.)
     let model;
     try {
       switch (botConfig.model_provider) {
@@ -162,6 +162,13 @@ export async function POST(request: NextRequest) {
         case "Google": {
           const { createGoogleGenerativeAI } = await import("@ai-sdk/google");
           model = createGoogleGenerativeAI({ apiKey: botConfig.api_key })(
+            botConfig.model_id,
+          );
+          break;
+        }
+        case "Anthropic": {
+          const { createAnthropic } = await import("@ai-sdk/anthropic");
+          model = createAnthropic({ apiKey: botConfig.api_key })(
             botConfig.model_id,
           );
           break;

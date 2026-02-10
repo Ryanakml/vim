@@ -1,7 +1,7 @@
 export type ModelId =
   | "gemini-2.5-pro"
   | "gpt-4o"
-  | "claude-3.5-sonnet"
+  | "claude-3-5-sonnet-latest"
   | "llama-3.3-70b-versatile"
   | "llama-3.1-8b-instant"
   | "openai/gpt-oss-120b"
@@ -28,7 +28,7 @@ export const MODEL_CONFIG: Record<
     link: "https://platform.openai.com/api-keys",
     label: "GPT-4o",
   },
-  "claude-3.5-sonnet": {
+  "claude-3-5-sonnet-latest": {
     provider: "Anthropic",
     placeholder: "sk-ant-....................",
     link: "https://console.anthropic.com/settings/keys",

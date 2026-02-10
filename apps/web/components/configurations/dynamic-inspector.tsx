@@ -449,7 +449,9 @@ export function DynamicInspector({
     const whatsappLink = normalizedWhatsapp
       ? `https://wa.me/${normalizedWhatsapp}`
       : "https://wa.me/<digits>";
-    const emailLink = emailTrimmed ? `mailto:${emailTrimmed}` : "mailto:you@domain.com";
+    const emailLink = emailTrimmed
+      ? `mailto:${emailTrimmed}`
+      : "mailto:you@domain.com";
 
     return (
       <div className="flex h-full w-full flex-col border-l bg-muted/10">
@@ -475,7 +477,8 @@ export function DynamicInspector({
               <div>
                 <p className="text-sm font-medium">Enable Escalation</p>
                 <p className="text-[11px] text-muted-foreground">
-                  Injects structured WhatsApp + Email CTA when support is needed.
+                  Injects structured WhatsApp + Email CTA when support is
+                  needed.
                 </p>
               </div>
               <Switch
@@ -654,7 +657,8 @@ export function DynamicInspector({
             </div>
 
             <p className="text-[11px] text-muted-foreground">
-              Your API key is stored securely.
+              API keys are stored in plaintext on the backend for immediate
+              model access.
             </p>
           </div>
 

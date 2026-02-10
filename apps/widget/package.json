@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "next dev --turbopack --port 3001",
     "build": "npm run build:embed && next build && cp public/embed.global.js .next/static/embed.global.js",
-    "build:embed": "tsup src/embed.ts --format iife --out-dir public --minify --clean",
+    "build:embed": "tsup",
     "start": "next start",
     "lint": "next lint",
     "typecheck": "tsc --noEmit"

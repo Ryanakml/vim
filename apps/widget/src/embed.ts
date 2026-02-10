@@ -11,6 +11,12 @@
  * ></script>
  */
 
+// Allow injection of WIDGET_URL at build/runtime
+export {};
+declare global {
+  var __WIDGET_URL__: string | undefined;
+}
+
 interface EmbedConfig {
   organizationId: string;
   botId: string;
@@ -44,8 +50,11 @@ interface BotProfileResponse {
   }
 
   // embed.ts
-  // const WIDGET_URL = "https://vim-widget.vercel.app";
-  const WIDGET_URL = "http://localhost:3001"; // --- IGNORE Later ---
+  // Use injected/env variable for widget URL, fallback to production
+  const WIDGET_URL =
+    globalThis.__WIDGET_URL__ ||
+    process.env.WIDGET_URL ||
+    "https://vim-widget.vercel.app";
   const VISITOR_STORAGE_KEY = "chatify_visitor_id";
   const VISITOR_CREATED_AT_KEY = "chatify_visitor_id_createdAt";
   const DEFAULT_PRIMARY_COLOR = "#6366f1";

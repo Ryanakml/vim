@@ -89,9 +89,9 @@ export const getBotConfigByBotId = internalQuery({
  */
 export const updateBotConfig: ReturnType<typeof mutation> = mutation({
   args: {
-    model_provider: v.optional(v.string()),
-    model_id: v.optional(v.string()),
-    api_key: v.optional(v.string()),
+    model_provider: v.optional(v.union(v.string(), v.null())),
+    model_id: v.optional(v.union(v.string(), v.null())),
+    api_key: v.optional(v.union(v.string(), v.null())),
     system_prompt: v.optional(v.string()),
     temperature: v.optional(v.number()),
     max_tokens: v.optional(v.number()),
@@ -132,6 +132,7 @@ export const updateBotConfig: ReturnType<typeof mutation> = mutation({
     };
 
     // Add provided fields from General tab
+    // Distinguish undefined (not sent) from null (explicitly cleared)
     if (model_provider !== undefined) updates.model_provider = model_provider;
     if (model_id !== undefined) updates.model_id = model_id;
     if (api_key !== undefined) updates.api_key = api_key;
