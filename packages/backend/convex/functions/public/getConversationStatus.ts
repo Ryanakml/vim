@@ -25,7 +25,7 @@ export const getConversationStatus = query({
 
     return {
       exists: true,
-      isActive: (conversation as any).status === "active",
+      isActive: (conversation as any).status !== "closed",
     };
   },
 });

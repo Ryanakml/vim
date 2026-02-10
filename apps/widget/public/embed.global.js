@@ -1,107 +1,116 @@
-"use strict";(()=>{(function(){let s=document.currentScript;if(!s){console.error("Chatify: Unable to determine script element");return}let c=s.getAttribute("data-organization-id"),g=s.getAttribute("data-bot-id"),h=s.getAttribute("data-position")||"bottom-right";if(!c||!g){console.error("Chatify: Missing data-organization-id or data-bot-id attributes");return}let f=process.env.NEXT_PUBLIC_WIDGET_URL||"http://localhost:3001",p="chatify_visitor_id",u="#6366f1";function I(){let e=localStorage.getItem(p);return e||(e=`visitor_${Date.now()}_${Math.random().toString(36).substr(2,9)}`,localStorage.setItem(p,e)),e}function b(e){let i={"bottom-right":"right: 20px; bottom: 20px;","bottom-left":"left: 20px; bottom: 20px;","top-right":"right: 20px; top: 20px;","top-left":"left: 20px; top: 20px;"};return i[e]||i["bottom-right"]}function L(e,i){let o=parseInt(e.replace("#",""),16),r=Math.min(255,(o>>16)+Math.round((255-(o>>16))*i/100)),d=Math.min(255,(o>>8&255)+Math.round((255-(o>>8&255))*i/100)),t=Math.min(255,(o&255)+Math.round((255-(o&255))*i/100));return`#${(r<<16|d<<8|t).toString(16).padStart(6,"0")}`}function l(e){let i=L(e,25);return`linear-gradient(135deg, ${e} 0%, ${i} 100%)`}function m(){return`
+"use strict";(()=>{(function(){let c=document.currentScript;if(!c){console.error("Chatify: Unable to determine script element");return}let m=c.getAttribute("data-organization-id"),f=c.getAttribute("data-bot-id"),u=c.getAttribute("data-position")||"bottom-right";if(!m||!f){console.error("Chatify: Missing data-organization-id or data-bot-id attributes");return}let b="https://vim-widget.vercel.app",y="chatify_visitor_id",h="chatify_visitor_id_createdAt",I="#6366f1";function T(t){let e=new Date(t);return Date.UTC(e.getUTCFullYear(),e.getUTCMonth(),e.getUTCDate()+1,0,0,0,0)}function _(t){if(!t.startsWith("visitor_"))return null;let e=t.split("_");if(e.length<3)return null;let a=Number(e[1]);return Number.isFinite(a)?a:null}function E(t,e){if(!Number.isFinite(t)||t>e)return!0;let a=T(t);return e>=a}function P(t){return`visitor_${t}_${Math.random().toString(36).substr(2,9)}`}function A(){let t=Date.now(),e=localStorage.getItem(y),a=localStorage.getItem(h),o=a?Number(a):null;if(!o&&e){let n=_(e);n&&Number.isFinite(n)&&(o=n,localStorage.setItem(h,String(o)))}if(!e||!o||E(o,t)){let n=P(t);return localStorage.setItem(y,n),localStorage.setItem(h,String(t)),n}return e}function R(t){switch(t){case"bottom-left":return{horizontal:"left",horizontalValue:"0",vertical:"bottom",verticalValue:"0"};case"top-right":return{horizontal:"right",horizontalValue:"0",vertical:"top",verticalValue:"0"};case"top-left":return{horizontal:"left",horizontalValue:"0",vertical:"top",verticalValue:"0"};case"bottom-right":default:return{horizontal:"right",horizontalValue:"0",vertical:"bottom",verticalValue:"0"}}}function L(t){switch(t){case"bottom-left":return{horizontal:"left",horizontalValue:"20px",vertical:"bottom",verticalValue:"20px"};case"top-right":return{horizontal:"right",horizontalValue:"20px",vertical:"top",verticalValue:"20px"};case"top-left":return{horizontal:"left",horizontalValue:"20px",vertical:"top",verticalValue:"20px"};case"bottom-right":default:return{horizontal:"right",horizontalValue:"20px",vertical:"bottom",verticalValue:"20px"}}}function S(t){return t.startsWith("top")?"top: 80px":"bottom: 80px"}function v(){return`
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
         <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
       </svg>
-    `}function S(){return`
+    `}function $(){return`
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
         <line x1="18" y1="6" x2="6" y2="18"></line>
         <line x1="6" y1="6" x2="18" y2="18"></line>
       </svg>
-    `}function x(){let e=document.createElement("div");e.id=`chatify-widget-${c}`,e.setAttribute("data-chatify-widget","true"),document.body.appendChild(e);let i=e.attachShadow({mode:"open"}),o=!1,r=u,d=document.createElement("style");d.textContent=`
+    `}function x(){let t=document.createElement("div");t.id=`chatify-widget-${m}`,t.setAttribute("data-chatify-widget","true");let e=R(u);t.style.setProperty("position","fixed","important"),t.style.setProperty(e.horizontal,e.horizontalValue,"important"),t.style.setProperty(e.vertical,e.verticalValue,"important"),t.style.setProperty("width","0","important"),t.style.setProperty("height","0","important"),t.style.setProperty("z-index","2147483647","important"),t.style.setProperty("pointer-events","none","important"),t.style.setProperty("margin","0","important"),t.style.setProperty("padding","0","important"),t.style.setProperty("border","0","important"),t.style.setProperty("background","transparent","important"),t.style.setProperty("box-shadow","none","important"),t.style.setProperty("outline","none","important"),t.style.setProperty("overflow","visible","important"),document.body.appendChild(t);let a=t.attachShadow({mode:"open"}),o=L(u),n=S(u),w=document.createElement("style");w.textContent=`
       * {
         box-sizing: border-box;
       }
 
+      /* BUTTON: Chat toggle */
       #chatify-button {
-        position: fixed;
-        ${b(h)}
-        width: 60px;
-        height: 60px;
-        border-radius: 50%;
-        background: ${l(u)};
-        border: none;
-        cursor: pointer;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-        z-index: 999999;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        transition: transform 0.3s ease, box-shadow 0.3s ease, background 0.3s ease;
-        color: white;
-        outline: none;
-        -webkit-tap-highlight-color: transparent;
+        position: absolute !important;
+        ${o.horizontal}: ${o.horizontalValue} !important;
+        ${o.vertical}: ${o.verticalValue} !important;
+        width: 60px !important;
+        height: 60px !important;
+        border-radius: 50% !important;
+        background: #6366f1 !important;
+        border: none !important;
+        cursor: pointer !important;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15) !important;
+        z-index: 999999 !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        transition: transform 0.2s ease !important;
+        color: white !important;
+        outline: none !important;
+        -webkit-tap-highlight-color: transparent !important;
+        pointer-events: auto !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        line-height: 0 !important;
+        font-size: 0 !important;
       }
 
       #chatify-button:hover {
-        transform: scale(1.1);
-        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+        transform: scale(1.1) !important;
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25) !important;
       }
 
       #chatify-button:active {
-        transform: scale(0.95);
-      }
-
-      #chatify-button.active {
-        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.25);
+        transform: scale(0.95) !important;
       }
 
       #chatify-button svg {
-        width: 28px;
-        height: 28px;
-        transition: transform 0.3s ease, opacity 0.2s ease;
+        width: 28px !important;
+        height: 28px !important;
+        transition: transform 0.3s ease !important;
+        flex-shrink: 0 !important;
       }
 
       #chatify-button.active svg {
-        transform: rotate(90deg);
+        transform: rotate(90deg) !important;
       }
 
+      /* CONTAINER: Wrapper for iframe (middle layer) */
+      #chatify-container {
+        position: absolute !important;
+        ${o.horizontal}: ${o.horizontalValue} !important;
+        ${n} !important;
+        width: 380px !important;
+        height: 640px !important;
+        max-width: calc(100vw - 20px) !important;
+        max-height: calc(100vh - 110px) !important;
+        background: transparent !important;
+        border-radius: 16px !important;
+        box-shadow: 0 8px 48px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06) !important;
+        overflow: hidden !important;
+        display: none !important;
+        opacity: 0 !important;
+        transform: translateY(12px) scale(0.97) !important;
+        transition: all 0.3s ease-out !important;
+        pointer-events: auto !important;
+        z-index: 999998 !important;
+      }
+
+      /* CONTAINER: Open state (animated) */
+      #chatify-container.active {
+        display: block !important;
+        opacity: 1 !important;
+        transform: translateY(0) scale(1) !important;
+      }
+
+      /* IFRAME: Inside container */
       #chatify-iframe {
-        position: fixed;
-        ${b(h)}
-        width: 400px;
-        height: 650px;
+        width: 100% !important;
+        height: 100% !important;
         border: none !important;
-        border-radius: 16px;
-        box-shadow: 0 8px 48px rgba(0, 0, 0, 0.15), 0 2px 8px rgba(0, 0, 0, 0.06);
-        z-index: 999998;
-        background: transparent;
-        display: none;
-        overflow: hidden;
-        color-scheme: light dark;
-      }
-
-      #chatify-iframe.active {
-        display: block;
-        animation: chatifySlideIn 0.3s ease-out;
-      }
-
-      @keyframes chatifySlideIn {
-        from {
-          opacity: 0;
-          transform: translateY(12px) scale(0.97);
-        }
-        to {
-          opacity: 1;
-          transform: translateY(0) scale(1);
-        }
+        color-scheme: light dark !important;
+        padding: 0 !important;
+        margin: 0 !important;
       }
 
       @media (max-width: 480px) {
-        #chatify-iframe {
-          width: 100vw;
-          height: 100vh;
-          height: 100dvh;
-          border-radius: 0;
-          top: 0;
-          left: 0;
-          right: 0;
-          bottom: 0;
-          box-shadow: none;
+        #chatify-container {
+          width: 100vw !important;
+          height: 100dvh !important;
+          max-width: 100vw !important;
+          max-height: 100dvh !important;
+          border-radius: 0 !important;
+          ${o.horizontal}: 0 !important;
+          ${o.vertical}: 0 !important;
+          box-shadow: none !important;
         }
 
         #chatify-button.active {
-          z-index: 9999999;
+          z-index: 9999999 !important;
         }
       }
-    `,i.appendChild(d);let t=document.createElement("button");t.id="chatify-button",t.innerHTML=m(),t.setAttribute("aria-label","Open chat widget"),t.setAttribute("aria-expanded","false"),i.appendChild(t);let n=document.createElement("iframe");n.id="chatify-iframe",n.src=`${f}/widget?orgId=${c}&botId=${g}&visitorId=${I()}`,n.allow="camera; microphone",n.setAttribute("loading","lazy"),n.setAttribute("title","Chatify Chat Widget"),i.appendChild(n);function E(){o=!0,n.classList.add("active"),t.classList.add("active"),t.innerHTML=S(),t.setAttribute("aria-expanded","true"),t.setAttribute("aria-label","Close chat widget")}function y(){o=!1,n.classList.remove("active"),t.classList.remove("active"),t.innerHTML=m(),t.setAttribute("aria-expanded","false"),t.setAttribute("aria-label","Open chat widget")}function k(){o?y():E()}t.addEventListener("click",k),window.addEventListener("message",w=>{var v,C;let A=new URL(f).origin;if(w.origin!==A)return;let a=w.data;a.type==="widget:close"&&y(),a.type==="widget:ready"&&((v=a.data)!=null&&v.primaryColor)&&(r=a.data.primaryColor,t.style.background=l(r)),a.type==="widget:config"&&((C=a.data)!=null&&C.primaryColor)&&(r=a.data.primaryColor,t.style.background=l(r))}),console.log("Chatify widget loaded successfully")}document.readyState==="loading"?document.addEventListener("DOMContentLoaded",x):x()})();})();
-//# sourceMappingURL=embed.global.js.map
+    `,a.appendChild(w);let i=document.createElement("button");i.id="chatify-button",i.innerHTML=v(),i.setAttribute("aria-label","Open chat widget"),i.setAttribute("aria-expanded","false"),a.appendChild(i);let l=document.createElement("div");l.id="chatify-container";let s=document.createElement("iframe");s.id="chatify-iframe",s.src=`${b}/widget?orgId=${m}&botId=${f}&visitorId=${A()}`,s.allow="camera; microphone",s.setAttribute("loading","lazy"),s.setAttribute("title","Chatify Chat Widget"),l.appendChild(s),a.appendChild(l);let g=!1,d=I;function z(p){if(typeof p!="number"||Number.isNaN(p))return;let r=`${Math.max(0,p)}px`;l.style.setProperty("border-radius",r,"important"),s.style.setProperty("border-radius",r,"important")}function O(){g=!0,l.classList.add("active"),i.classList.add("active"),i.innerHTML=$(),i.setAttribute("aria-expanded","true"),i.setAttribute("aria-label","Close chat widget")}function C(){g=!1,l.classList.remove("active"),i.classList.remove("active"),i.innerHTML=v(),i.setAttribute("aria-expanded","false"),i.setAttribute("aria-label","Open chat widget")}function k(){g?C():O()}i.addEventListener("click",k),window.addEventListener("message",p=>{let V=new URL(b).origin;if(p.origin!==V)return;let r=p.data;r.type==="widget:close"&&C(),r.type==="widget:ready"&&r.data&&(r.data.primaryColor&&(d=r.data.primaryColor,i.style.setProperty("background",d,"important")),r.data.cornerRadius!=null&&z(r.data.cornerRadius)),r.type==="widget:config"&&r.data&&(r.data.primaryColor&&(d=r.data.primaryColor,i.style.setProperty("background",d,"important")),r.data.cornerRadius!=null&&z(r.data.cornerRadius))}),console.log("Chatify widget loaded successfully")}document.readyState==="loading"?document.addEventListener("DOMContentLoaded",x):x()})();})();

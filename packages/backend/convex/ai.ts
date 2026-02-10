@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import {
   action,
   internalMutation,
+  internalQuery,
   query,
   mutation,
 } from "./_generated/server.js";
@@ -9,6 +10,45 @@ import { api, internal } from "./_generated/api.js";
 import { embed, generateText, streamText } from "ai";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import type { Doc } from "./_generated/dataModel.js";
+
+type EscalationConfig = {
+  enabled?: boolean;
+  whatsapp?: string | null;
+  email?: string | null;
+};
+
+function buildEscalationPrompt(escalation?: EscalationConfig) {
+  if (!escalation?.enabled) return null;
+
+  const whatsappDigits = (escalation.whatsapp || "").replace(/\D/g, "");
+  const email = (escalation.email || "").trim();
+
+  // ✅ FIX: Allow escalation if at least ONE contact method is provided
+  if (!whatsappDigits && !email) {
+    return null;
+  }
+
+  const contactLinks: string[] = [];
+  if (whatsappDigits) {
+    const whatsappLink = `https://wa.me/${whatsappDigits}`;
+    contactLinks.push(`[Chat WhatsApp](${whatsappLink})`);
+  }
+  if (email) {
+    const emailLink = `mailto:${email}`;
+    contactLinks.push(`[Email Us](${emailLink})`);
+  }
+
+  return [
+    "Escalation Protocol:",
+    "- When users ask about purchasing, pricing, contact information, speaking to sales, or need human assistance, you MUST include the contact section below.",
+    "- If you cannot answer from the Knowledge Base, you MUST provide the contact information.",
+    "- Do NOT make up contact information - ONLY use the links provided below.",
+    "- Do not add any other contact links anywhere in the response.",
+    "",
+    "### Contact Us",
+    ...contactLinks,
+  ].join("\n");
+}
 
 /**
  * Log AI Response Metrics to Database
@@ -75,6 +115,26 @@ export const saveBotMessage = internalMutation({
   },
 });
 
+/**
+ * Internal Query: Load conversation messages without auth checks
+ *
+ * Used by: generateBotResponse for non-authenticated integrations (e.g., widget)
+ * Security: Only called server-side after session validation in public actions
+ */
+export const getConversationMessages = internalQuery({
+  args: {
+    conversationId: v.id("conversations"),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("messages")
+      .withIndex("by_conversation", (q) =>
+        q.eq("conversation_id", args.conversationId),
+      )
+      .collect();
+  },
+});
+
 // ===== NEW: STREAMING HELPERS =====
 
 /**
@@ -87,11 +147,39 @@ export const getBotConfigForStream = query({
     botId: v.id("botProfiles"),
   },
   handler: async (ctx, args) => {
-    const botConfig = await ctx.db
-      .query("botProfiles")
-      .filter((q) => q.eq(q.field("_id"), args.botId))
-      .first();
-    return botConfig;
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthorized: Must be logged in");
+    }
+
+    const userId = identity.subject;
+    const orgId = (identity.org_id as string | undefined) || undefined;
+
+    const botProfile = await ctx.db.get(args.botId);
+    if (!botProfile) return null;
+
+    const isOwner = botProfile.user_id === userId;
+    const isOrgMatch = Boolean(orgId) && botProfile.organization_id === orgId;
+
+    if (!isOwner && !isOrgMatch) {
+      throw new Error("Unauthorized: Cannot access other user's bot");
+    }
+
+    // Return only what the streaming route needs (avoid leaking full profile)
+    return {
+      id: botProfile._id,
+      model_provider: botProfile.model_provider || null,
+      model_id: botProfile.model_id || null,
+      api_key: botProfile.api_key || null,
+      system_prompt: botProfile.system_prompt || null,
+      temperature: botProfile.temperature ?? null,
+      max_tokens: botProfile.max_tokens ?? null,
+      escalation: {
+        enabled: botProfile.escalation?.enabled ?? false,
+        whatsapp: botProfile.escalation?.whatsapp ?? "",
+        email: botProfile.escalation?.email ?? "",
+      },
+    };
   },
 });
 
@@ -102,9 +190,39 @@ export const getBotConfigForStream = query({
  */
 export const getConversationHistoryForStream = query({
   args: {
+    botId: v.id("botProfiles"),
     conversationId: v.id("conversations"),
   },
   handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthorized: Must be logged in");
+    }
+
+    const userId = identity.subject;
+    const orgId = (identity.org_id as string | undefined) || undefined;
+
+    const botProfile = await ctx.db.get(args.botId);
+    if (!botProfile) {
+      throw new Error("Bot not found");
+    }
+
+    const isOwner = botProfile.user_id === userId;
+    const isOrgMatch = Boolean(orgId) && botProfile.organization_id === orgId;
+
+    if (!isOwner && !isOrgMatch) {
+      throw new Error("Unauthorized: Cannot access other user's bot");
+    }
+
+    const conversation = await ctx.db.get(args.conversationId);
+    if (!conversation) {
+      throw new Error("Conversation not found");
+    }
+
+    if (conversation.bot_id !== args.botId) {
+      throw new Error("Unauthorized: Conversation does not belong to bot");
+    }
+
     const messages = await ctx.db
       .query("messages")
       .filter((q) => q.eq(q.field("conversation_id"), args.conversationId))
@@ -133,11 +251,40 @@ export const saveStreamedResponse = mutation({
     integration: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthorized: Must be logged in");
+    }
+
+    const userId = identity.subject;
+    const orgId = (identity.org_id as string | undefined) || undefined;
+
+    const botProfile = await ctx.db.get(args.botId);
+    if (!botProfile) {
+      throw new Error("Bot not found");
+    }
+
+    const isOwner = botProfile.user_id === userId;
+    const isOrgMatch = Boolean(orgId) && botProfile.organization_id === orgId;
+
+    if (!isOwner && !isOrgMatch) {
+      throw new Error("Unauthorized: Cannot access other user's bot");
+    }
+
+    const conversation = await ctx.db.get(args.conversationId);
+    if (!conversation) {
+      throw new Error("Conversation not found");
+    }
+
+    if (conversation.bot_id !== args.botId) {
+      throw new Error("Unauthorized: Conversation does not belong to bot");
+    }
+
     const integration = args.integration || "streaming";
 
     // Save message to database
     const msgId = await ctx.db.insert("messages", {
-      user_id: undefined,
+      user_id: userId,
       conversation_id: args.conversationId,
       role: "bot",
       content: args.botResponse,
@@ -146,6 +293,7 @@ export const saveStreamedResponse = mutation({
 
     // Log metrics with streaming-specific fields
     const logId = await ctx.db.insert("aiLogs", {
+      user_id: userId,
       botId: args.botId,
       conversationId: args.conversationId,
       userMessage: args.userMessage,
@@ -215,7 +363,10 @@ export const generateBotResponse = action({
 
     // ===== STEP 1: Load Configuration =====
     console.log("[generateBotResponse] STEP 1: Loading bot configuration...");
-    const botConfig = await ctx.runQuery(api.configuration.getBotConfig, {});
+    const botConfig = await ctx.runQuery(
+      internal.configuration.getBotConfigByBotId,
+      { botId },
+    );
 
     if (!botConfig) {
       const error = "Bot configuration not found";
@@ -247,12 +398,20 @@ export const generateBotResponse = action({
     console.log(
       `[generateBotResponse] STEP 2: Loading conversation history for conversationId: ${conversationId}...`,
     );
-    const allMessages = await ctx.runQuery(
-      api.playground.getPlaygroundMessages,
-      {
+    let allMessages: Doc<"messages">[] = [];
+    if (integration === "playground") {
+      allMessages = await ctx.runQuery(api.playground.getPlaygroundMessages, {
         sessionId: conversationId,
-      },
-    );
+      });
+    } else if (integration === "emulator") {
+      allMessages = await ctx.runQuery(api.playground.getEmulatorMessages, {
+        sessionId: conversationId,
+      });
+    } else {
+      allMessages = await ctx.runQuery(internal.ai.getConversationMessages, {
+        conversationId,
+      });
+    }
 
     console.log(
       `[generateBotResponse] ✓ Found ${allMessages?.length || 0} messages in conversation history`,
@@ -436,9 +595,13 @@ export const generateBotResponse = action({
       const systemPrompt = contextBlock
         ? `${baseSystemPrompt}\n\nRelevant Knowledge Base Information:\n-----------------------------------\n${contextBlock}\n-----------------------------------\nUse the information above to answer the user's question if relevant.`
         : baseSystemPrompt;
+      const escalationPrompt = buildEscalationPrompt(botConfig.escalation);
+      const finalSystemPrompt = escalationPrompt
+        ? `${systemPrompt}\n\n${escalationPrompt}`
+        : systemPrompt;
 
       console.log(
-        `[generateBotResponse]   System prompt: "${systemPrompt.substring(0, 60)}${systemPrompt.length > 60 ? "..." : ""}"`,
+        `[generateBotResponse]   System prompt: "${finalSystemPrompt.substring(0, 60)}${finalSystemPrompt.length > 60 ? "..." : ""}"`,
       );
       console.log(
         `[generateBotResponse]   Temperature: ${botConfig.temperature ?? 0.7}`,
@@ -447,7 +610,7 @@ export const generateBotResponse = action({
 
       const result = await generateText({
         model,
-        system: systemPrompt,
+        system: finalSystemPrompt,
         messages: messagesForAI,
         temperature: botConfig.temperature ?? 0.7,
       });

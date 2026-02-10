@@ -42,12 +42,11 @@ export function ChatSkeleton({
     >
       <div
         className={cn(
-          "relative z-10 flex flex-col overflow-hidden w-[380px] h-[640px] max-h-[90vh] max-w-[95%]",
+          "relative z-10 flex flex-col overflow-hidden w-full h-full",
           bgColor,
         )}
         style={{
           borderRadius: `${cornerRadius}px`,
-          boxShadow: "0 5px 40px rgba(0, 0, 0, 0.16)",
           border: "0",
         }}
       >

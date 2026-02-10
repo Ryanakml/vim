@@ -67,6 +67,13 @@ export function useUpdateBotConfig() {
   return useMutation(api.configuration.updateBotConfig);
 }
 
+/**
+ * Hook to update structured escalation configuration
+ */
+export function useUpdateEscalationConfig() {
+  return useMutation(api.configuration.updateEscalationConfig);
+}
+
 // ===== CONVERSATION HOOKS =====
 
 /**
@@ -511,4 +518,17 @@ export function useEmulatorMessages(sessionId?: Id<"conversations"> | "skip") {
 
 export function useDashboardStats() {
   return useQuery(api.analytics.getDashboardStats);
+}
+
+/**
+ * Hook to fetch lead capture stats
+ */
+export function useLeadStats(
+  botId?: Id<"botProfiles"> | "skip",
+  days: number = 1,
+) {
+  return useQuery(
+    api.analytics.getLeadStats,
+    botId && botId !== "skip" ? { botId, days } : "skip",
+  );
 }

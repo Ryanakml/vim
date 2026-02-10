@@ -7,7 +7,7 @@ import {
   AvatarImage,
 } from "@workspace/ui/components/avatar";
 import { Button } from "@workspace/ui/components/button";
-import { RefreshCw, Volume2, X } from "lucide-react";
+import { RefreshCw, Volume2 } from "lucide-react";
 import type { ChatHeaderProps } from "../types.ts";
 
 /**
@@ -23,8 +23,8 @@ export function ChatHeader({
   themeMode,
   enableSound,
   onRefresh,
-  onClose,
   isLoading = false,
+  isOnline = true,
 }: ChatHeaderProps) {
   const nameToDisplay = botName || "Support Bot";
 
@@ -82,8 +82,13 @@ export function ChatHeader({
                     : "#A1A1A6",
             }}
           >
-            <span className="block h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
-            Online
+            <span
+              className={cn(
+                "block h-1.5 w-1.5 rounded-full",
+                isOnline ? "bg-green-500 animate-pulse" : "bg-gray-400",
+              )}
+            />
+            {isOnline ? "Online" : "Offline"}
           </span>
         </div>
       </div>
@@ -114,36 +119,21 @@ export function ChatHeader({
           </>
         )}
 
-        {/* Refresh Button */}
+        {/* Restart Conversation */}
         {onRefresh && (
           <Button
             variant="ghost"
-            size="icon"
-            className="rounded-full h-8 w-8 transition-colors"
+            size="sm"
+            className="h-8 px-3 gap-2"
             style={{
               color: headerTextColor,
             }}
             onClick={onRefresh}
             disabled={isLoading}
-            title="Refresh"
+            title="Restart conversation"
+            aria-label="Restart conversation"
           >
             <RefreshCw className={cn("h-4 w-4", isLoading && "animate-spin")} />
-          </Button>
-        )}
-
-        {/* Close Button */}
-        {onClose && (
-          <Button
-            variant="ghost"
-            size="icon"
-            className="rounded-full h-8 w-8 transition-colors"
-            style={{
-              color: headerTextColor,
-            }}
-            onClick={onClose}
-            title="Close"
-          >
-            <X className="h-4 w-4" />
           </Button>
         )}
       </div>

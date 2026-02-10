@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { query, mutation } from "./_generated/server.js";
+import { query, mutation, internalQuery } from "./_generated/server.js";
 
 // ===== CONFIGURATION =====
 
@@ -9,8 +9,17 @@ import { query, mutation } from "./_generated/server.js";
  */
 export const getBotConfig: ReturnType<typeof query> = query({
   handler: async (ctx) => {
-    const profiles = await ctx.db.query("botProfiles").collect();
-    const profile = profiles[0];
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthorized: Must be logged in");
+    }
+
+    const userId = identity.subject;
+
+    const profile = await ctx.db
+      .query("botProfiles")
+      .withIndex("by_user_id", (q) => q.eq("user_id", userId))
+      .first();
 
     if (!profile) {
       return null;
@@ -24,6 +33,42 @@ export const getBotConfig: ReturnType<typeof query> = query({
       system_prompt: profile.system_prompt || null,
       temperature: profile.temperature ?? null,
       max_tokens: profile.max_tokens ?? null,
+      escalation: {
+        enabled: profile.escalation?.enabled ?? false,
+        whatsapp: profile.escalation?.whatsapp ?? "",
+        email: profile.escalation?.email ?? "",
+      },
+    };
+  },
+});
+
+/**
+ * INTERNAL: Get bot configuration by bot profile ID.
+ *
+ * Used by server-side/public flows (e.g., widget reply generation) where the caller
+ * has already validated bot ownership/session and needs access to api_key.
+ */
+export const getBotConfigByBotId = internalQuery({
+  args: {
+    botId: v.id("botProfiles"),
+  },
+  handler: async (ctx, args) => {
+    const profile = await ctx.db.get(args.botId);
+    if (!profile) return null;
+
+    return {
+      id: profile._id,
+      model_provider: profile.model_provider || null,
+      model_id: profile.model_id || null,
+      api_key: profile.api_key || null,
+      system_prompt: profile.system_prompt || null,
+      temperature: profile.temperature ?? null,
+      max_tokens: profile.max_tokens ?? null,
+      escalation: {
+        enabled: profile.escalation?.enabled ?? false,
+        whatsapp: profile.escalation?.whatsapp ?? "",
+        email: profile.escalation?.email ?? "",
+      },
     };
   },
 });
@@ -44,21 +89,31 @@ export const getBotConfig: ReturnType<typeof query> = query({
  */
 export const updateBotConfig: ReturnType<typeof mutation> = mutation({
   args: {
-    model_provider: v.optional(v.string()),
-    model_id: v.optional(v.string()),
-    api_key: v.optional(v.string()),
+    model_provider: v.optional(v.union(v.string(), v.null())),
+    model_id: v.optional(v.union(v.string(), v.null())),
+    api_key: v.optional(v.union(v.string(), v.null())),
     system_prompt: v.optional(v.string()),
     temperature: v.optional(v.number()),
     max_tokens: v.optional(v.number()),
     isAdvancedMode: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    // Get the first (and typically only) bot profile
-    const profiles = await ctx.db.query("botProfiles").collect();
-    const profile = profiles[0];
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthorized: Must be logged in");
+    }
+
+    const userId = identity.subject;
+
+    const profile = await ctx.db
+      .query("botProfiles")
+      .withIndex("by_user_id", (q) => q.eq("user_id", userId))
+      .first();
 
     if (!profile) {
-      throw new Error("Bot profile not found");
+      throw new Error(
+        "Bot profile not found. Visit Webchat → Bot Profile once to initialize your bot.",
+      );
     }
 
     const {
@@ -77,6 +132,7 @@ export const updateBotConfig: ReturnType<typeof mutation> = mutation({
     };
 
     // Add provided fields from General tab
+    // Distinguish undefined (not sent) from null (explicitly cleared)
     if (model_provider !== undefined) updates.model_provider = model_provider;
     if (model_id !== undefined) updates.model_id = model_id;
     if (api_key !== undefined) updates.api_key = api_key;
@@ -109,5 +165,60 @@ export const updateBotConfig: ReturnType<typeof mutation> = mutation({
       success: true,
       id: profile._id,
     };
+  },
+});
+
+/**
+ * Update structured escalation configuration
+ * Stores WhatsApp + Email contact info separately from system prompt
+ */
+export const updateEscalationConfig: ReturnType<typeof mutation> = mutation({
+  args: {
+    enabled: v.boolean(),
+    whatsapp: v.optional(v.string()),
+    email: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthorized: Must be logged in");
+    }
+
+    const userId = identity.subject;
+
+    const profile = await ctx.db
+      .query("botProfiles")
+      .withIndex("by_user_id", (q) => q.eq("user_id", userId))
+      .first();
+
+    if (!profile) {
+      throw new Error(
+        "Bot profile not found. Visit Webchat → Bot Profile once to initialize your bot.",
+      );
+    }
+
+    const whatsappRaw = (args.whatsapp || "").trim();
+    const emailRaw = (args.email || "").trim();
+    const whatsappDigits = whatsappRaw.replace(/\D/g, "");
+
+    if (args.enabled) {
+      if (!whatsappDigits) {
+        throw new Error("WhatsApp number is required when escalation is on.");
+      }
+      if (!emailRaw || !emailRaw.includes("@")) {
+        throw new Error("Valid email is required when escalation is on.");
+      }
+    }
+
+    await ctx.db.patch(profile._id, {
+      escalation: {
+        enabled: args.enabled,
+        whatsapp: whatsappRaw,
+        email: emailRaw,
+      },
+      updated_at: Date.now(),
+    });
+
+    return { success: true, id: profile._id };
   },
 });

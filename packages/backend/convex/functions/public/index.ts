@@ -19,3 +19,4 @@ export { getSessionDetails } from "./getSessionDetails";
 export { getConversationStatus } from "./getConversationStatus";
 export { generateReply } from "./generateReply";
 export { endSession } from "./endSession";
+export { trackEvent } from "./trackEvent";

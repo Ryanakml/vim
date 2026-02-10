@@ -8,30 +8,65 @@ import {
 } from "@workspace/ui/components/tabs";
 import { BotEmulator } from "./bot-emulator";
 import { DynamicInspector } from "./dynamic-inspector";
-import type { Doc } from "@workspace/backend/convex/_generated/dataModel";
+
+type EscalationConfig = {
+  enabled: boolean;
+  whatsapp: string;
+  email: string;
+};
 
 interface BotSidebarProps {
   activeTab: "emulator" | "inspector";
   onTabChange: (tab: "emulator" | "inspector") => void;
-  selectedDocumentId: string | null;
-  selectedPrompt: boolean; // true if System Instructions is selected
-  onDocumentSelect: (doc: Doc<"documents">) => void;
+  selectedComponent: string | null;
   systemPrompt?: string;
   onSystemPromptChange?: (prompt: string) => void;
+  escalationConfig?: EscalationConfig;
+  onEscalationConfigChange?: (next: EscalationConfig) => void;
+  modelId?: string;
+  apiKey?: string;
+  onModelConfigChange?: (next: {
+    modelId: string;
+    modelProvider: string;
+    apiKey: string;
+  }) => void;
+  onModelConfigDeleted?: () => void;
 }
 
 export function BotSidebar({
   activeTab,
   onTabChange,
-  selectedDocumentId,
-  selectedPrompt,
+  selectedComponent,
   onSystemPromptChange,
   systemPrompt,
+  escalationConfig,
+  onEscalationConfigChange,
+  modelId,
+  apiKey,
+  onModelConfigChange,
+  onModelConfigDeleted,
 }: BotSidebarProps) {
   // Determine the inspector mode based on what's selected
-  let inspectorMode: "knowledge-base" | "prompt" | "empty" = "empty";
-  if (selectedPrompt) {
+  let inspectorMode:
+    | "knowledge-base"
+    | "knowledge-base-list"
+    | "prompt"
+    | "model"
+    | "escalation"
+    | "empty" = "empty";
+
+  const selectedDocumentId = selectedComponent?.startsWith("kb_")
+    ? selectedComponent.slice(3)
+    : null;
+
+  if (selectedComponent === "prompt") {
     inspectorMode = "prompt";
+  } else if (selectedComponent === "model") {
+    inspectorMode = "model";
+  } else if (selectedComponent === "escalation") {
+    inspectorMode = "escalation";
+  } else if (selectedComponent === "kb") {
+    inspectorMode = "knowledge-base-list";
   } else if (selectedDocumentId) {
     inspectorMode = "knowledge-base";
   }
@@ -73,6 +108,12 @@ export function BotSidebar({
             documentId={selectedDocumentId || undefined}
             systemPrompt={systemPrompt || ""}
             onSystemPromptChange={onSystemPromptChange}
+            escalationConfig={escalationConfig}
+            onEscalationConfigChange={onEscalationConfigChange}
+            modelId={modelId}
+            apiKey={apiKey}
+            onModelConfigChange={onModelConfigChange}
+            onModelConfigDeleted={onModelConfigDeleted}
           />
         </TabsContent>
 

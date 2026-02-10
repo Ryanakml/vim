@@ -34,9 +34,11 @@ export function ChatContainer({
   error,
   onSendMessage,
   onRefresh,
-  onClose,
+  onClose: _onClose,
   onFeedback,
+  onLeadClick,
   className,
+  isOnline = true,
 }: ChatContainerProps) {
   const [input, setInput] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -59,10 +61,6 @@ export function ChatContainer({
     if (!content.trim()) return;
     setInput("");
     await onSendMessage(content);
-  };
-
-  const handleClose = () => {
-    onClose?.();
   };
 
   const handleRefresh = async () => {
@@ -101,14 +99,12 @@ export function ChatContainer({
       )}
       style={{ background: "transparent" }}
     >
-      {/* Chat window - Fixed size for iframe embedding */}
+      {/* Chat window - Fills iframe container smoothly */}
       <div
-        className="relative z-10 flex flex-col overflow-hidden w-[380px] h-[640px] max-h-[90vh] max-w-[95%]"
+        className="relative z-10 flex flex-col overflow-hidden w-full h-full"
         style={{
           borderRadius: `${botConfig.appearance.cornerRadius}px`,
           fontFamily: getFontFamily(),
-          boxShadow:
-            "0 8px 48px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06)",
           border: "none",
           outline: "none",
           backgroundColor: bgColor,
@@ -123,8 +119,8 @@ export function ChatContainer({
           themeMode={botConfig.appearance.themeMode}
           enableSound={botConfig.features.enableSound}
           onRefresh={onRefresh ? handleRefresh : undefined}
-          onClose={handleClose}
           isLoading={isLoading || isRefreshing}
+          isOnline={isOnline}
         />
 
         {/* Messages */}
@@ -142,6 +138,7 @@ export function ChatContainer({
           isStreaming={isStreaming}
           error={error}
           onFeedback={onFeedback}
+          onLeadClick={onLeadClick}
         />
 
         {/* Input */}

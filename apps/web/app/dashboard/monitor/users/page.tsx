@@ -94,7 +94,7 @@ export default function UsersPage() {
         <div className="grid grid-cols-12 gap-4 border-b border-zinc-800 bg-zinc-900/50 px-6 py-3 text-xs font-medium text-zinc-400 uppercase tracking-wider">
           <div className="col-span-5">User Identifier</div>
           <div className="col-span-3">Name</div>
-          <div className="col-span-2">Tags</div>
+          <div className="col-span-2">Status</div>
           <div className="col-span-2 text-right">Last Modified</div>
         </div>
 
@@ -131,11 +131,23 @@ export default function UsersPage() {
                   </span>
                 </div>
 
-                {/* Column 3: Tags */}
-                <div className="col-span-2">
-                  <span className="text-sm text-zinc-500 font-medium">
-                    No tags
-                  </span>
+                {/* Column 3: Tags / Status */}
+                <div className="col-span-2 flex items-center gap-2">
+                  {user.is_active ? (
+                    <>
+                      <div className="h-2 w-2 rounded-full bg-green-500"></div>
+                      <span className="text-xs text-green-400 font-medium">
+                        Active
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <div className="h-2 w-2 rounded-full bg-zinc-600"></div>
+                      <span className="text-xs text-zinc-500 font-medium">
+                        Inactive
+                      </span>
+                    </>
+                  )}
                 </div>
 
                 {/* Column 4: Last Active */}

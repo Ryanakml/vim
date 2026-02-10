@@ -1,4 +1,5 @@
 import { query } from "./_generated/server";
+import { v } from "convex/values";
 import type { RegisteredQuery } from "convex/server";
 import type { Doc } from "./_generated/dataModel";
 
@@ -87,4 +88,58 @@ export const getDashboardStats: RegisteredQuery<
     activeConversations,
     latestConversations: enrichedLatest,
   };
+});
+
+/**
+ * Query: Get lead capture stats for a bot over a time period
+ * ✅ Filtered to current user's bot
+ */
+export const getLeadStats = query({
+  args: {
+    botId: v.id("botProfiles"),
+    days: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthorized: Must be logged in");
+    }
+
+    const userId = identity.subject;
+    const orgId = (identity.org_id as string | undefined) || undefined;
+
+    const botProfile = await ctx.db.get(args.botId);
+    if (!botProfile) {
+      throw new Error("Bot not found");
+    }
+
+    const isOwner = botProfile.user_id === userId;
+    const isOrgMatch = Boolean(orgId) && botProfile.organization_id === orgId;
+
+    if (!isOwner && !isOrgMatch) {
+      throw new Error("Unauthorized: Cannot access other user's bot");
+    }
+
+    const cutoff = Date.now() - args.days * 24 * 60 * 60 * 1000;
+
+    const events = await ctx.db
+      .query("businessEvents")
+      .withIndex("by_bot_createdAt", (q) =>
+        q.eq("botId", args.botId).gte("createdAt", cutoff),
+      )
+      .collect();
+
+    const leadsWhatsapp = events.filter(
+      (e) => e.eventType === "lead_whatsapp_click",
+    ).length;
+    const leadsEmail = events.filter(
+      (e) => e.eventType === "lead_email_click",
+    ).length;
+
+    return {
+      leadsTotal: events.length,
+      leadsWhatsapp,
+      leadsEmail,
+    };
+  },
 });

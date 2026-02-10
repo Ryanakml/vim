@@ -320,7 +320,7 @@ export function BotWidget({ className }: BotWidgetProps) {
           isStreaming={isStreaming}
           error={null}
           onSendMessage={handleSendMessage}
-          onClose={() => setIsOpen(false)}
+          onRefresh={handleRestart}
         />
       </div>
 

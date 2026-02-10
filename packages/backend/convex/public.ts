@@ -14,4 +14,5 @@ export {
   getConversationStatus,
   generateReply,
   endSession,
+  trackEvent,
 } from "./functions/public/index.js";

@@ -13,6 +13,7 @@ import type { Id } from "./_generated/dataModel.js";
 
 export const generateEmbedding = internalAction({
   args: {
+    botId: v.id("botProfiles"),
     text: v.string(),
   },
   handler: async (ctx, args): Promise<number[]> => {
@@ -21,7 +22,10 @@ export const generateEmbedding = internalAction({
       throw new Error("Text is required to generate embeddings");
     }
 
-    const botConfig = await ctx.runQuery(api.configuration.getBotConfig, {});
+    const botConfig = await ctx.runQuery(
+      internal.configuration.getBotConfigByBotId,
+      { botId: args.botId },
+    );
     // Determine API key based on bot configuration or environment variables
     const isGoogleProvider = botConfig?.model_provider === "Google AI";
     const dbKey = isGoogleProvider ? botConfig?.api_key : undefined;
@@ -131,6 +135,7 @@ export const addKnowledge = action({
     const embedding: number[] = await ctx.runAction(
       internal.knowledge.generateEmbedding,
       {
+        botId: args.botId,
         text: trimmed,
       },
     );
@@ -240,6 +245,7 @@ export const updateDocument = action({
     const embedding: number[] = await ctx.runAction(
       internal.knowledge.generateEmbedding,
       {
+        botId: doc.botId,
         text: trimmed,
       },
     );

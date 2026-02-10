@@ -1,6 +1,26 @@
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server.js";
 
+const VISITOR_HASH_LENGTH = 8;
+
+function hashVisitorIdToHex8(value: string): string {
+  // FNV-1a 32-bit hash to avoid Node "crypto" dependency
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i);
+    hash = (hash * 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(VISITOR_HASH_LENGTH, "0");
+}
+
+function formatAnonymousVisitorName(visitorId?: string): string {
+  if (!visitorId) {
+    return "anonymousid_unknown";
+  }
+  const hash = hashVisitorIdToHex8(visitorId).slice(0, VISITOR_HASH_LENGTH);
+  return `anonymousid_${hash}`;
+}
+
 // ===== CONVERSATIONS =====
 
 /**
@@ -197,9 +217,7 @@ export const getPublicConversations = query({
           messageCount: convMessages.length,
           lastMessage,
           user: {
-            name: conv.visitor_id
-              ? `Visitor (${conv.visitor_id.slice(0, 8)})`
-              : "Unknown",
+            name: formatAnonymousVisitorName(conv.visitor_id),
           },
         };
       }),
@@ -501,16 +519,45 @@ export const updateFeedback = mutation({
 // ===== USERS =====
 
 /**
- * Get all users
+ * Get all users for the current organization
+ * Filters by organization_id from auth context
+ * Includes active/inactive status based on last activity
  */
 export const getUsers = query({
   handler: async (ctx) => {
-    return await ctx.db.query("users").collect();
+    // Get organization from auth identity
+    const identity = await ctx.auth.getUserIdentity();
+    const organizationId =
+      (identity?.org_id as string | undefined) || undefined;
+
+    if (!organizationId) {
+      // Return empty if no organization context
+      return [];
+    }
+
+    // Query users by organization
+    const users = await ctx.db
+      .query("users")
+      .withIndex("by_organization", (q) =>
+        q.eq("organization_id", organizationId),
+      )
+      .collect();
+
+    // Add active/inactive status based on last_active_at
+    const now = Date.now();
+    const ACTIVE_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+    return users.map((user) => ({
+      ...user,
+      is_active:
+        user.last_active_at && now - user.last_active_at < ACTIVE_THRESHOLD_MS,
+    }));
   },
 });
 
 /**
  * Get or create a user by identifier
+ * Scoped to the current organization
  * If user exists, return existing user
  * If not, create new user with the provided identifier and name
  */
@@ -520,14 +567,30 @@ export const getOrCreateUser = mutation({
     name: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    // Check if user exists
-    const allUsers = await ctx.db.query("users").collect();
-    const existing = allUsers.find((u) => u.identifier === args.identifier);
+    // Get organization from auth identity
+    const identity = await ctx.auth.getUserIdentity();
+    const organizationId =
+      (identity?.org_id as string | undefined) || undefined;
+
+    if (!organizationId) {
+      throw new Error("Organization context required");
+    }
+
+    // Check if user exists in current organization
+    const existing = await ctx.db
+      .query("users")
+      .withIndex("by_org_and_identifier", (q) =>
+        q
+          .eq("organization_id", organizationId)
+          .eq("identifier", args.identifier),
+      )
+      .first();
 
     if (existing) return existing;
 
-    // Create new user
+    // Create new user with organization_id
     return await ctx.db.insert("users", {
+      organization_id: organizationId,
       identifier: args.identifier,
       name: args.name || "Unknown User",
       created_at: Date.now(),

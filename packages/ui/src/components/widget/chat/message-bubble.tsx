@@ -6,6 +6,7 @@ import {
   AvatarFallback,
   AvatarImage,
 } from "@workspace/ui/components/avatar";
+import { Button } from "@workspace/ui/components/button";
 import { ThumbsDown, ThumbsUp } from "lucide-react";
 import { useState } from "react";
 import type { MessageBubbleProps } from "../types.ts";
@@ -55,6 +56,108 @@ function SimpleMarkdown({ content }: { content: string }) {
  * Renders a single message with optional feedback controls
  * No app-specific dependencies
  */
+type CtaLink = {
+  type: "whatsapp" | "email";
+  href: string;
+  label: string;
+};
+
+const CTA_HEADER_REGEX = /^#{2,6}\s*(.+)$/;
+const MARKDOWN_LINK_REGEX = /\[([^\]]+)\]\(([^)\s]+)\)/g;
+const BARE_URL_REGEX = /(mailto:[^\s)]+)|(https?:\/\/[^\s)]+)/gi;
+const WHATSAPP_HREF_REGEX =
+  /^(whatsapp:|https?:\/\/(wa\.me\/|api\.whatsapp\.com\/|chat\.whatsapp\.com\/))/i;
+const EMAIL_HREF_REGEX = /^mailto:/i;
+const CTA_ORDER: Record<CtaLink["type"], number> = {
+  whatsapp: 0,
+  email: 1,
+};
+
+const defaultCtaLabel = (type: CtaLink["type"]) =>
+  type === "whatsapp" ? "Chat on WhatsApp" : "Email Support";
+
+const normalizeHref = (href: string) => href.trim();
+
+const classifyCtaHref = (href: string): CtaLink["type"] | null => {
+  const normalized = normalizeHref(href);
+  if (EMAIL_HREF_REGEX.test(normalized)) return "email";
+  if (WHATSAPP_HREF_REGEX.test(normalized)) return "whatsapp";
+  return null;
+};
+
+const labelFromLinkText = (text: string, type: CtaLink["type"]) => {
+  const trimmed = text.trim();
+  if (!trimmed) return defaultCtaLabel(type);
+  if (/^(https?:\/\/|mailto:)/i.test(trimmed)) return defaultCtaLabel(type);
+  return trimmed;
+};
+
+function extractCtaLinks(content: string) {
+  const lines = content.split(/\r?\n/);
+  const cleanLines: string[] = [];
+  const ctaLinks: CtaLink[] = [];
+  const seen = new Set<string>();
+  let ctaTitle: string | null = null;
+
+  const addCta = (type: CtaLink["type"], href: string, label: string) => {
+    const normalized = normalizeHref(href);
+    const key = `${type}|${normalized}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    ctaLinks.push({ type, href: normalized, label });
+  };
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    const headerMatch = trimmed.match(CTA_HEADER_REGEX);
+    if (headerMatch && !ctaTitle) {
+      ctaTitle = headerMatch[1]!.trim();
+      continue;
+    }
+
+    let lineWithoutCtas = line.replace(
+      MARKDOWN_LINK_REGEX,
+      (match, text, href) => {
+        const type = classifyCtaHref(href);
+        if (!type) return match;
+        addCta(type, href, labelFromLinkText(text, type));
+        return "";
+      },
+    );
+
+    lineWithoutCtas = lineWithoutCtas.replace(BARE_URL_REGEX, (match) => {
+      const type = classifyCtaHref(match);
+      if (!type) return match;
+      addCta(type, match, defaultCtaLabel(type));
+      return "";
+    });
+
+    const cleaned = lineWithoutCtas.replace(/\s{2,}/g, " ").trim();
+    if (cleaned) {
+      cleanLines.push(cleaned);
+    }
+  }
+
+  if (ctaLinks.length === 0) {
+    return { cleanText: content, ctaLinks, ctaTitle: null };
+  }
+
+  const orderedLinks = ctaLinks
+    .map((link, index) => ({ ...link, _index: index }))
+    .sort((a, b) => {
+      const typeDiff = CTA_ORDER[a.type] - CTA_ORDER[b.type];
+      return typeDiff !== 0 ? typeDiff : a._index - b._index;
+    })
+    .map(({ _index, ...link }) => link);
+
+  let cleanText = cleanLines.join("\n").trim();
+  if (!cleanText) {
+    cleanText = ctaTitle ?? "Contact Support";
+  }
+
+  return { cleanText, ctaLinks: orderedLinks, ctaTitle };
+}
+
 export function MessageBubble({
   message,
   primaryColor,
@@ -65,6 +168,7 @@ export function MessageBubble({
   messageStyle,
   enableFeedback,
   onFeedback,
+  onLeadClick,
 }: MessageBubbleProps) {
   const isBot = message.role === "bot";
   const [feedbackGiven, setFeedbackGiven] = useState<
@@ -78,11 +182,23 @@ export function MessageBubble({
   const textSecondaryColor = themeMode === "light" ? "#71717A" : "#A1A1A6";
 
   const getBubbleRadius = () => `${cornerRadius * 0.75}px`;
+  const ctaPanelStyle = {
+    "--cta-panel-bg": themeMode === "light" ? "#F8FAFC" : "#1F1F22",
+    "--cta-panel-border": themeMode === "light" ? "#E4E4E7" : "#3F3F46",
+    "--cta-btn-bg": themeMode === "light" ? "#FFFFFF" : "#27272A",
+    "--cta-btn-border": themeMode === "light" ? "#D4D4D8" : "#3F3F46",
+    "--cta-btn-text": themeMode === "light" ? "#111827" : "#F4F4F5",
+    "--cta-btn-hover": themeMode === "light" ? "#F1F5F9" : "#32323A",
+  } as React.CSSProperties;
 
   const handleFeedback = (feedback: "helpful" | "not-helpful") => {
     setFeedbackGiven(feedback);
     onFeedback?.(message.id, feedback);
   };
+
+  const { cleanText, ctaLinks, ctaTitle } = isBot
+    ? extractCtaLinks(message.content)
+    : { cleanText: message.content, ctaLinks: [], ctaTitle: null };
 
   return (
     <div
@@ -149,9 +265,52 @@ export function MessageBubble({
                   }
           }
         >
-          <SimpleMarkdown content={message.content} />
+          <SimpleMarkdown content={cleanText} />
         </div>
       </div>
+
+      {isBot && ctaLinks.length > 0 && (
+        <div className="ml-9 flex w-full max-w-[80%] flex-col gap-2">
+          {ctaTitle && cleanText !== ctaTitle && (
+            <span
+              className="text-[11px] font-medium uppercase tracking-wide"
+              style={{ color: textSecondaryColor }}
+            >
+              {ctaTitle}
+            </span>
+          )}
+          <div
+            className="flex flex-col gap-2 rounded-xl border px-3 py-2 bg-[var(--cta-panel-bg)] border-[var(--cta-panel-border)]"
+            style={ctaPanelStyle}
+          >
+            {ctaLinks.map((link) => (
+              <Button
+                key={`${link.type}-${link.href}`}
+                variant="secondary"
+                size="sm"
+                asChild
+                className="w-full justify-center border border-[var(--cta-btn-border)] bg-[var(--cta-btn-bg)] text-[var(--cta-btn-text)] hover:bg-[var(--cta-btn-hover)] hover:text-[var(--cta-btn-text)]"
+              >
+                <a
+                  href={link.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() => {
+                    const messageId = message._id || message.id;
+                    void onLeadClick?.({
+                      type: link.type,
+                      href: link.href,
+                      messageId,
+                    });
+                  }}
+                >
+                  {link.label}
+                </a>
+              </Button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Feedback Icons for Bot Messages */}
       {isBot && enableFeedback && (

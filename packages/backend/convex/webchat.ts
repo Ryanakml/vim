@@ -66,6 +66,11 @@ export const ensureBotProfile = mutation({
       enable_file_upload: false,
       enable_sound: false,
       history_reset: "never",
+      escalation: {
+        enabled: false,
+        whatsapp: "",
+        email: "",
+      },
       created_at: Date.now(),
       updated_at: Date.now(),
     });
@@ -171,6 +176,11 @@ export const updateBotProfiles = mutation({
       enable_file_upload: false,
       enable_sound: false,
       history_reset: "never",
+      escalation: {
+        enabled: false,
+        whatsapp: "",
+        email: "",
+      },
       created_at: Date.now(),
       updated_at: Date.now(),
     });

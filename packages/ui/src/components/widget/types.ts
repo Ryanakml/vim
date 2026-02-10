@@ -43,6 +43,12 @@ export interface Message {
   _id?: string;
 }
 
+export type LeadClickPayload = {
+  type: "whatsapp" | "email";
+  href: string;
+  messageId?: string;
+};
+
 export interface ChatSession {
   id: string;
   organizationId: string;
@@ -66,7 +72,9 @@ export interface ChatContainerProps {
     messageId: string,
     feedback: "helpful" | "not-helpful",
   ) => Promise<void>;
+  onLeadClick?: (payload: LeadClickPayload) => void | Promise<void>;
   className?: string;
+  isOnline?: boolean;
 }
 
 export interface ChatHeaderProps {
@@ -79,6 +87,7 @@ export interface ChatHeaderProps {
   onRefresh?: () => void;
   onClose?: () => void;
   isLoading?: boolean;
+  isOnline?: boolean;
 }
 
 export interface ChatMessagesProps {
@@ -96,6 +105,7 @@ export interface ChatMessagesProps {
   streamingContent?: string;
   error?: Error | null;
   onFeedback?: (messageId: string, feedback: "helpful" | "not-helpful") => void;
+  onLeadClick?: (payload: LeadClickPayload) => void;
 }
 
 export interface ChatInputProps {
@@ -122,6 +132,7 @@ export interface MessageBubbleProps {
   messageStyle: "filled" | "outlined";
   enableFeedback: boolean;
   onFeedback?: (messageId: string, feedback: "helpful" | "not-helpful") => void;
+  onLeadClick?: (payload: LeadClickPayload) => void;
 }
 
 export interface ThemeProviderProps {

@@ -26,6 +26,7 @@ import {
   useBotProfile,
   useAIMetrics,
   useKnowledgeUtilization,
+  useLeadStats,
 } from "@/lib/convex-client";
 
 // A. Activity Data (Messages) - Default Main Chart
@@ -71,6 +72,7 @@ export default function OverviewPage() {
   // Fetch AI metrics
   const aiMetrics = useAIMetrics(botProfile?._id, days);
   const knowledgeStats = useKnowledgeUtilization(botProfile?._id, days);
+  const leadStats = useLeadStats(botProfile?._id, days);
 
   // Loading state
   if (dashboardStats === undefined) {
@@ -85,10 +87,12 @@ export default function OverviewPage() {
   }
 
   // Use real data or fallback to empty
-  const totalUsers = dashboardStats?.totalUsers ?? 0;
   const totalConversations = dashboardStats?.totalConversations ?? 0;
   const activeConversations = dashboardStats?.activeConversations ?? 0;
   const latestConversations = dashboardStats?.latestConversations ?? [];
+  const leadsTotal = leadStats?.leadsTotal ?? 0;
+  const leadsWhatsapp = leadStats?.leadsWhatsapp ?? 0;
+  const leadsEmail = leadStats?.leadsEmail ?? 0;
 
   // Prepare performance chart data from AI metrics
   const performanceChartData = aiMetrics
@@ -143,9 +147,9 @@ export default function OverviewPage() {
                   subtext={`${activeConversations} active now`}
                 />
                 <KpiCard
-                  title="Total Users"
-                  value={totalUsers}
-                  subtext="Unique customers"
+                  title="Leads Captured"
+                  value={leadsTotal}
+                  subtext={`WhatsApp ${leadsWhatsapp} / Email ${leadsEmail}`}
                 />
                 <KpiCard
                   title="Active Rate"

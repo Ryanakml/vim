@@ -21,6 +21,7 @@ import type * as functions_public_getMessages from "../functions/public/getMessa
 import type * as functions_public_getSessionDetails from "../functions/public/getSessionDetails.js";
 import type * as functions_public_index from "../functions/public/index.js";
 import type * as functions_public_sendMessage from "../functions/public/sendMessage.js";
+import type * as functions_public_trackEvent from "../functions/public/trackEvent.js";
 import type * as knowledge from "../knowledge.js";
 import type * as migrations from "../migrations.js";
 import type * as monitor from "../monitor.js";
@@ -48,6 +49,7 @@ declare const fullApi: ApiFromModules<{
   "functions/public/getSessionDetails": typeof functions_public_getSessionDetails;
   "functions/public/index": typeof functions_public_index;
   "functions/public/sendMessage": typeof functions_public_sendMessage;
+  "functions/public/trackEvent": typeof functions_public_trackEvent;
   knowledge: typeof knowledge;
   migrations: typeof migrations;
   monitor: typeof monitor;
