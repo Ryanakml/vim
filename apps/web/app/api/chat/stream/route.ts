@@ -2,10 +2,41 @@ import { NextRequest, NextResponse } from "next/server";
 import { streamText } from "ai";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@workspace/backend/convex/_generated/api";
+import { auth } from "@clerk/nextjs/server";
 
 // ✅ CRITICAL: Set execution timeout for long-running streams
 export const maxDuration = 60; // Seconds - adjust based on Vercel plan
 export const runtime = "nodejs";
+
+type EscalationConfig = {
+  enabled?: boolean;
+  whatsapp?: string | null;
+  email?: string | null;
+};
+
+function buildEscalationPrompt(escalation?: EscalationConfig) {
+  if (!escalation?.enabled) return null;
+
+  const whatsappDigits = (escalation.whatsapp || "").replace(/\D/g, "");
+  const email = (escalation.email || "").trim();
+
+  if (!whatsappDigits || !email) {
+    return null;
+  }
+
+  const whatsappLink = `https://wa.me/${whatsappDigits}`;
+  const emailLink = `mailto:${email}`;
+
+  return [
+    "Escalation Protocol:",
+    "- If you cannot answer from the Knowledge Base or the user asks to contact a human, you MUST include the section below exactly.",
+    "- Do not add any other links anywhere in the response.",
+    "",
+    "### Contact Support",
+    `[Chat WhatsApp](${whatsappLink})`,
+    `[Email Us](${emailLink})`,
+  ].join("\n");
+}
 
 /**
  * Streaming endpoint for bot responses
@@ -24,6 +55,11 @@ export const runtime = "nodejs";
  */
 export async function POST(request: NextRequest) {
   try {
+    const { userId, getToken } = await auth();
+    if (!userId) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+
     const { botId, conversationId, userMessage } = await request.json();
 
     // Step 1: Validate inputs
@@ -43,8 +79,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Step 2: Create Convex client (server-side only)
+    // Step 2: Create Convex client (server-side only) with auth
     const convex = new ConvexHttpClient(process.env.NEXT_PUBLIC_CONVEX_URL!);
+    const convexToken = await getToken({ template: "convex" });
+    if (!convexToken) {
+      return NextResponse.json(
+        { error: "Unauthorized: Missing Convex auth token" },
+        { status: 401 },
+      );
+    }
+    convex.setAuth(convexToken);
 
     // Step 3: Fetch context in parallel (before streaming starts)
     const startTime = Date.now();
@@ -60,6 +104,7 @@ export async function POST(request: NextRequest) {
 
       // Query 2: Conversation history
       convex.query(api.ai.getConversationHistoryForStream, {
+        botId: botId as any,
         conversationId: conversationId as any,
       }),
     ]);
@@ -93,7 +138,10 @@ export async function POST(request: NextRequest) {
     // Step 6: Build system prompt
     const baseSystemPrompt =
       botConfig.system_prompt || "You are a helpful assistant.";
-    const systemPrompt = baseSystemPrompt;
+    const escalationPrompt = buildEscalationPrompt(botConfig.escalation);
+    const systemPrompt = escalationPrompt
+      ? `${baseSystemPrompt}\n\n${escalationPrompt}`
+      : baseSystemPrompt;
 
     // Step 7: Initialize AI model (OpenAI, Groq, Google, etc.)
     let model;

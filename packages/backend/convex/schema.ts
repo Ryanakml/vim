@@ -35,6 +35,14 @@ export default defineSchema({
     system_prompt: v.optional(v.string()),
     temperature: v.optional(v.number()),
     max_tokens: v.optional(v.number()),
+    // Escalation / Lead Capture (Structured)
+    escalation: v.optional(
+      v.object({
+        enabled: v.boolean(),
+        whatsapp: v.optional(v.string()),
+        email: v.optional(v.string()),
+      }),
+    ),
     embed_token: v.optional(v.string()), // Token for embed script deployment
     embed_token_created_at: v.optional(v.number()), // Timestamp when embed token was created
     embed_token_domain: v.optional(v.string()), // Domain where embed token is deployed
@@ -107,11 +115,17 @@ export default defineSchema({
 
   // Tabel 5: Users (Data Pengguna yang chat)
   users: defineTable({
+    // ✅ Multi-tenancy: Isolate users by organization
+    organization_id: v.optional(v.string()), // Clerk organization ID
+
     identifier: v.string(), // ID unik dari browser/session
     name: v.string(),
     created_at: v.number(),
     last_active_at: v.number(),
-  }).index("by_identifier", ["identifier"]),
+  })
+    .index("by_identifier", ["identifier"])
+    .index("by_organization", ["organization_id"])
+    .index("by_org_and_identifier", ["organization_id", "identifier"]),
 
   // Tabel 6: AI Logs (AI Response History & Analytics)
   aiLogs: defineTable({
@@ -155,4 +169,22 @@ export default defineSchema({
   })
     .index("by_session_lookup", ["organizationId", "botId", "visitorId"])
     .index("by_conversation", ["conversationId"]),
+
+  // Tabel 8: Business Events (Lead capture, etc)
+  businessEvents: defineTable({
+    organizationId: v.string(),
+    botId: v.id("botProfiles"),
+    conversationId: v.id("conversations"),
+    visitorId: v.optional(v.string()),
+    eventType: v.union(
+      v.literal("lead_whatsapp_click"),
+      v.literal("lead_email_click"),
+    ),
+    href: v.optional(v.string()),
+    createdAt: v.number(),
+    dedupeKey: v.string(),
+  })
+    .index("by_bot_createdAt", ["botId", "createdAt"])
+    .index("by_org_createdAt", ["organizationId", "createdAt"])
+    .index("by_dedupeKey", ["dedupeKey"]),
 });
