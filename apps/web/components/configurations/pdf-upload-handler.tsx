@@ -10,13 +10,23 @@ import {
   chunkDocument,
 } from "@workspace/backend/convex/documentchunker";
 
-// --- PDF.JS SETUP ---
-import * as pdfjs from "pdfjs-dist";
 import type { TextItem } from "pdfjs-dist/types/src/display/api";
+// --- PDF.JS SETUP ---
+type PdfJsModule = typeof import("pdfjs-dist");
+let pdfjsPromise: Promise<PdfJsModule> | null = null;
 
-// Setup Worker via CDN agar tidak memberatkan bundle utama & UI tidak freeze
-// Pastikan versi worker sama dengan versi library yang diinstall
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`;
+const getPdfJs = async (): Promise<PdfJsModule> => {
+  if (!pdfjsPromise) {
+    pdfjsPromise = import("pdfjs-dist").then((mod) => {
+      // Setup Worker via CDN agar tidak memberatkan bundle utama & UI tidak freeze
+      // Pastikan versi worker sama dengan versi library yang diinstall
+      mod.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${mod.version}/build/pdf.worker.min.mjs`;
+      return mod;
+    });
+  }
+
+  return pdfjsPromise;
+};
 // --------------------
 
 const MAX_PDF_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
@@ -273,6 +283,7 @@ type PdfParseResult = {
 };
 
 async function extractPdfText(file: File): Promise<PdfParseResult> {
+  const pdfjs = await getPdfJs();
   const arrayBuffer = await file.arrayBuffer();
 
   // Load document

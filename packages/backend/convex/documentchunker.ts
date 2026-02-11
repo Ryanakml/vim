@@ -51,7 +51,8 @@ export function chunkDocument(
     let chunkText = trimmed.substring(currentIndex, chunkEnd).trim();
 
     if (chunks.length > 0) {
-      const previousText = chunks[chunks.length - 1].text;
+      const lastChunk = chunks[chunks.length - 1]!;
+      const previousText = lastChunk.text;
       const context = previousText.substring(
         Math.max(0, previousText.length - overlapSize),
       );

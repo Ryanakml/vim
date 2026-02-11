@@ -14,11 +14,13 @@ export const logKBUsage = internalMutation({
 
     const now = Date.now();
     for (let i = 0; i < args.retrievedDocumentIds.length; i += 1) {
+      const docId = args.retrievedDocumentIds[i];
+      if (!docId) continue;
       await ctx.db.insert("kb_usage_logs", {
         user_id: args.user_id,
         botId: args.botId,
         conversationId: args.conversationId,
-        documentId: args.retrievedDocumentIds[i],
+        documentId: docId,
         similarity: args.querySimilarities[i] ?? 0,
         timestamp: now,
       });
