@@ -10,12 +10,22 @@ import {
 import { BotSidebar } from "@/components/configurations/bot-sidebar";
 import { Markdown } from "@/components/markdown";
 import { KeyRound, Loader2, Check } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useMemo, useState, useEffect } from "react";
 import { KnowledgeBaseSection } from "@/components/configurations/knowledge-base-section";
-import { useEnsureBotProfile, useGetBotConfig } from "@/lib/convex-client";
+import { KBAnalytics } from "@/components/configurations/kb-analytics";
+import {
+  useBotProfile,
+  useEnsureBotProfile,
+  useGetBotConfig,
+  useKnowledgeDocuments,
+} from "@/lib/convex-client";
 import type { Doc } from "@workspace/backend/convex/_generated/dataModel";
 import { useAuth } from "@clerk/nextjs";
 import { MODEL_CONFIG, type ModelId } from "@/lib/model-config";
+import {
+  analyzeKBCompleteness,
+  generateKBInstructions,
+} from "@/lib/system-prompt-builder";
 
 export default function ConfigurationsPage() {
   const { userId } = useAuth();
@@ -48,6 +58,28 @@ export default function ConfigurationsPage() {
   // ===== BACKEND HOOKS =====
   const ensureBotProfile = useEnsureBotProfile();
   const botConfig = useGetBotConfig();
+  const botProfile = useBotProfile();
+  const knowledgeDocuments = useKnowledgeDocuments(botProfile?._id);
+
+  const kbDocsLoading = knowledgeDocuments === undefined;
+  const kbDocsForScore = useMemo(
+    () => knowledgeDocuments?.map((doc) => ({ text: doc.text || "" })) ?? [],
+    [knowledgeDocuments],
+  );
+  const kbCompleteness = useMemo(
+    () => analyzeKBCompleteness(systemPrompt || "", kbDocsForScore),
+    [systemPrompt, kbDocsForScore],
+  );
+  const kbInstructions = useMemo(
+    () => generateKBInstructions(kbDocsForScore.length),
+    [kbDocsForScore.length],
+  );
+  const kbScoreClass =
+    kbCompleteness.score >= 70
+      ? "border-green-600/40 text-green-400 bg-green-900/20"
+      : kbCompleteness.score >= 50
+        ? "border-yellow-600/40 text-yellow-400 bg-yellow-900/20"
+        : "border-red-600/40 text-red-400 bg-red-900/20";
 
   // Ensure a bot profile exists for this user before interacting with config
   useEffect(() => {
@@ -330,6 +362,50 @@ export default function ConfigurationsPage() {
                       "No system instructions defined."
                     )}
                   </div>
+
+                  <div className="rounded-md border border-zinc-800 bg-zinc-900/40 p-3 text-xs text-muted-foreground space-y-2">
+                    {kbDocsLoading ? (
+                      <p className="text-xs text-muted-foreground">
+                        Loading knowledge base insights...
+                      </p>
+                    ) : (
+                      <>
+                        <div className="flex items-center justify-between">
+                          <span>KB completeness</span>
+                          <span
+                            className={`text-[11px] px-2 py-0.5 rounded-full border ${kbScoreClass}`}
+                          >
+                            {kbCompleteness.score}%
+                          </span>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          {kbInstructions}
+                        </p>
+                        {kbCompleteness.warnings.length > 0 && (
+                          <div className="space-y-1">
+                            <p className="text-[11px] text-red-400">Warnings</p>
+                            <ul className="list-disc pl-4 space-y-1">
+                              {kbCompleteness.warnings.map((warning) => (
+                                <li key={warning}>{warning}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {kbCompleteness.suggestions.length > 0 && (
+                          <div className="space-y-1">
+                            <p className="text-[11px] text-yellow-400">
+                              Suggestions
+                            </p>
+                            <ul className="list-disc pl-4 space-y-1">
+                              {kbCompleteness.suggestions.map((suggestion) => (
+                                <li key={suggestion}>{suggestion}</li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
                 </section>
 
                 {/* Escalation Settings - Structured Lead Capture */}
@@ -390,6 +466,8 @@ export default function ConfigurationsPage() {
                   isSelected={selectedKbSection}
                   onSelectSection={handleSelectKnowledgeBaseSection}
                 />
+
+                <KBAnalytics botId={botProfile?._id} />
               </TabsContent>
 
               {/* ===== ADVANCED TAB ===== */}

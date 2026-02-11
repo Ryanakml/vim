@@ -1,8 +1,6 @@
 "use client";
 
-import { useRef, useState, useEffect } from "react";
-import { useAction } from "convex/react";
-import { api } from "@workspace/backend/convex/_generated/api";
+import { useMemo, useState } from "react";
 import { Button } from "@workspace/ui/components/button";
 import {
   Dialog,
@@ -11,18 +9,18 @@ import {
 } from "@workspace/ui/components/dialog";
 import { Input } from "@workspace/ui/components/input";
 import { Textarea } from "@workspace/ui/components/textarea";
-import { Markdown } from "@/components/markdown";
+import { FileText, Globe, Type, Plus, ArrowLeft, LucideIcon } from "lucide-react";
 import {
-  FileText,
-  Globe,
-  Type,
-  UploadCloud,
-  Plus,
-  ArrowLeft,
-  LucideIcon,
-} from "lucide-react";
-import { useBotProfile, useKnowledgeDocuments } from "@/lib/convex-client";
+  useAddKnowledgeWithMetadata,
+  useBotProfile,
+  useDeleteDocument,
+  useKnowledgeDocuments,
+} from "@/lib/convex-client";
 import type { Doc } from "@workspace/backend/convex/_generated/dataModel";
+import { KB_LIMITS, calculateDocStats, validateKBEntry } from "@/lib/kb-utils";
+import { KBDocumentList } from "@/components/configurations/kb-document-list";
+import { PdfUploadHandler } from "@/components/configurations/pdf-upload-handler";
+import { WebsiteScraperHandler } from "@/components/configurations/website-scraper-handler";
 
 // --- 1. CONFIGURATION (PUSAT KONTROL TAMPILAN) ---
 
@@ -50,9 +48,9 @@ interface SourceOption {
 const SOURCE_OPTIONS: SourceOption[] = [
   {
     id: "document",
-    label: "Document",
-    title: "Upload Documents",
-    description: "Upload PDF, DOCX, TXT files",
+    label: "PDF",
+    title: "Upload PDFs",
+    description: "Upload PDF files",
     icon: FileText,
     style: {
       iconColor: "text-red-500",
@@ -126,77 +124,60 @@ export function KnowledgeBaseSection({
   const [currentView, setCurrentView] = useState<SourceId | "selection">(
     "selection",
   );
-  const [documents, setDocuments] = useState<
-    {
-      id: string;
-      title: string;
-      text: string;
-      source: SourceId;
-      fullDoc?: Doc<"documents">;
-    }[]
-  >([]);
   const [inlineTitle, setInlineTitle] = useState("");
   const [inlineContent, setInlineContent] = useState("");
-  const [websiteUrl, setWebsiteUrl] = useState("");
-  const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const botProfile = useBotProfile();
   const knowledgeDocuments = useKnowledgeDocuments(botProfile?._id);
-  const addKnowledge = useAction(api.knowledge.addKnowledge);
+  const addKnowledgeWithMetadata = useAddKnowledgeWithMetadata();
+  const deleteDocument = useDeleteDocument();
 
-  // Load existing documents from database
-  useEffect(() => {
-    if (knowledgeDocuments && botProfile) {
-      const botId = botProfile._id;
-      const loadedDocs = knowledgeDocuments.map((doc: any) => {
-        const text = doc.text || "";
-        const docObj: Doc<"documents"> = {
+  const kbDocuments = useMemo(() => {
+    if (!knowledgeDocuments || !botProfile) return [];
+
+    return knowledgeDocuments.map(
+      (doc) =>
+        ({
           _id: doc.id,
-          _creationTime: doc.createdAt,
-          botId: botId,
-          text: text,
+          _creationTime: doc.createdAt ?? Date.now(),
+          botId: botProfile._id,
+          text: doc.text || "",
           embedding: [],
-        };
-        return {
-          id: String(doc.id),
-          title: text.split("\n")[0].replace(/^# /, "") || "Document",
-          text: text,
-          source: "inline" as SourceId,
-          fullDoc: docObj,
-        };
-      });
-      setDocuments(loadedDocs);
-    }
+          user_id: botProfile.user_id,
+          source_type: doc.source_type,
+          source_metadata: doc.source_metadata,
+        }) as Doc<"documents">,
+    );
   }, [knowledgeDocuments, botProfile]);
+
+  const kbStats = useMemo(() => {
+    if (kbDocuments.length === 0) {
+      return { totalDocs: 0, totalWords: 0, avgWords: 0 };
+    }
+
+    const totalWords = kbDocuments.reduce((sum, doc) => {
+      return sum + calculateDocStats(doc.text).wordCount;
+    }, 0);
+
+    return {
+      totalDocs: kbDocuments.length,
+      totalWords,
+      avgWords: Math.round(totalWords / kbDocuments.length),
+    };
+  }, [kbDocuments]);
 
   const handleOpenChange = (val: boolean) => {
     setOpen(val);
-    if (!val) setTimeout(() => setCurrentView("selection"), 300);
-  };
-
-  const resetErrors = () => setErrorMessage(null);
-
-  const handleFilesPicked = (files: FileList | null) => {
-    if (!files) return;
-    setUploadFiles(Array.from(files));
-    resetErrors();
-  };
-
-  const readTextFile = async (file: File) => {
-    const isText =
-      file.type.startsWith("text/") ||
-      file.name.endsWith(".txt") ||
-      file.name.endsWith(".md");
-    if (!isText) {
-      throw new Error(
-        `Unsupported file type for ${file.name}. Please upload .txt or .md files for now.`,
-      );
+    if (!val) {
+      setTimeout(() => setCurrentView("selection"), 300);
+      setErrorMessage(null);
     }
+  };
 
-    return await file.text();
+  const resetErrors = () => {
+    setErrorMessage(null);
   };
 
   const handleAddInline = async () => {
@@ -205,39 +186,18 @@ export function KnowledgeBaseSection({
       return;
     }
 
-    const content = inlineContent.trim();
-    if (!content) {
-      setErrorMessage("Please enter content for the snippet.");
+    if (!inlineValidation.valid || inlineLimitReached) {
       return;
     }
 
-    resetErrors();
+    setErrorMessage(null);
     setIsSubmitting(true);
     try {
-      const payloadText = inlineTitle.trim()
-        ? `# ${inlineTitle.trim()}\n\n${content}`
-        : content;
-      const result = await addKnowledge({
+      await addKnowledgeWithMetadata({
         botId: botProfile._id,
-        text: payloadText,
+        text: inlinePayloadText,
+        source_type: "inline",
       });
-
-      setDocuments((prev) => [
-        ...prev,
-        {
-          id: String(result.id),
-          title: inlineTitle.trim() || "Inline Snippet",
-          text: payloadText,
-          source: "inline",
-          fullDoc: {
-            _id: result.id,
-            botId: botProfile._id,
-            text: payloadText,
-            embedding: [],
-            _creationTime: Date.now(),
-          } as Doc<"documents">,
-        },
-      ]);
 
       setInlineTitle("");
       setInlineContent("");
@@ -251,108 +211,41 @@ export function KnowledgeBaseSection({
     }
   };
 
-  const handleAddWebsite = async () => {
-    if (!botProfile?._id) {
-      setErrorMessage("Bot profile is not ready yet. Please try again.");
-      return;
-    }
-
-    const url = websiteUrl.trim();
-    if (!url) {
-      setErrorMessage("Please enter a valid website URL.");
-      return;
-    }
-
-    resetErrors();
-    setIsSubmitting(true);
-    try {
-      const payloadText = `Website source: ${url}`;
-      const result = await addKnowledge({
-        botId: botProfile._id,
-        text: payloadText,
-      });
-
-      setDocuments((prev) => [
-        ...prev,
-        {
-          id: String(result.id),
-          title: url,
-          text: payloadText,
-          source: "website",
-          fullDoc: {
-            _id: result.id,
-            botId: botProfile._id,
-            text: payloadText,
-            embedding: [],
-            _creationTime: Date.now(),
-          } as Doc<"documents">,
-        },
-      ]);
-
-      setWebsiteUrl("");
-      setOpen(false);
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : "Failed to add website",
-      );
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
-  const handleUploadDocuments = async () => {
-    if (!botProfile?._id) {
-      setErrorMessage("Bot profile is not ready yet. Please try again.");
-      return;
-    }
-
-    if (uploadFiles.length === 0) {
-      setErrorMessage("Please select at least one text file to upload.");
-      return;
-    }
-
-    resetErrors();
-    setIsSubmitting(true);
-    try {
-      for (const file of uploadFiles) {
-        const text = await readTextFile(file);
-        const payloadText = `# ${file.name}\n\n${text}`.trim();
-        const result = await addKnowledge({
-          botId: botProfile._id,
-          text: payloadText,
-        });
-
-        setDocuments((prev) => [
-          ...prev,
-          {
-            id: String(result.id),
-            title: file.name,
-            text: payloadText,
-            source: "document",
-            fullDoc: {
-              _id: result.id,
-              botId: botProfile._id,
-              text: payloadText,
-              embedding: [],
-              _creationTime: Date.now(),
-            } as Doc<"documents">,
-          },
-        ]);
-      }
-
-      setUploadFiles([]);
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      setOpen(false);
-    } catch (error) {
-      setErrorMessage(
-        error instanceof Error ? error.message : "Failed to upload documents",
-      );
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
-
   const activeSource = SOURCE_OPTIONS.find((s) => s.id === currentView);
+  const hasDocuments = kbDocuments.length > 0;
+  const inlinePayloadText = inlineTitle.trim()
+    ? `# ${inlineTitle.trim()}\n\n${inlineContent.trim()}`
+    : inlineContent.trim();
+  const inlineValidation = useMemo(
+    () => validateKBEntry(inlinePayloadText, inlineTitle.trim(), kbDocuments),
+    [inlinePayloadText, inlineTitle, kbDocuments],
+  );
+  const inlineLimitReached =
+    kbDocuments.length >= KB_LIMITS.MAX_DOCUMENTS_PER_BOT;
+  const inlineErrorText = [
+    ...inlineValidation.errors,
+    ...(inlineLimitReached ? ["Knowledge base document limit reached."] : []),
+  ].join(" ");
+  const inlineWarningText = inlineValidation.warnings.join(" ");
+  const inlineCharCount = inlineContent.length;
+  const inlineCharRatio = inlineCharCount / KB_LIMITS.MAX_TEXT_LENGTH;
+  const inlineCountClass =
+    inlineCharRatio > 1
+      ? "text-red-400"
+      : inlineCharRatio > 0.8
+        ? "text-yellow-400"
+        : "text-muted-foreground";
+
+  const handleDeleteDocument = async (documentId: Doc<"documents">["_id"]) => {
+    resetErrors();
+    try {
+      await deleteDocument({ documentId });
+    } catch (error) {
+      setErrorMessage(
+        error instanceof Error ? error.message : "Failed to delete document",
+      );
+    }
+  };
 
   return (
     <section
@@ -372,7 +265,7 @@ export function KnowledgeBaseSection({
             Manage your agents knowledge sources.
           </p>
         </div>
-        {documents.length > 0 && (
+        {hasDocuments && (
           <Button
             size="sm"
             onClick={(e) => {
@@ -387,7 +280,7 @@ export function KnowledgeBaseSection({
 
       {/* Content List */}
       <div className="p-6">
-        {documents.length === 0 ? (
+        {!hasDocuments ? (
           <div className="flex flex-col items-center justify-center rounded-lg border border-dashed py-12 text-center bg-muted/10">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
               <FileText className="h-6 w-6 text-muted-foreground" />
@@ -403,30 +296,35 @@ export function KnowledgeBaseSection({
             </Button>
           </div>
         ) : (
-          <div className="space-y-3">
-            {documents.map((doc) => (
-              <button
-                key={doc.id}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (onDocumentSelect && doc.fullDoc) {
-                    onDocumentSelect(doc.fullDoc);
-                  }
-                }}
-                className={`w-full text-left rounded-md border p-4 text-sm text-muted-foreground transition-colors cursor-pointer ${
-                  selectedDocumentId && selectedDocumentId === doc.id
-                    ? "border-blue-600 bg-blue-900/10"
-                    : "border-zinc-800 bg-zinc-900/30 hover:bg-zinc-800/50 hover:border-zinc-700"
-                }`}
-              >
-                <div className="font-medium text-foreground mb-1">
-                  {doc.title}
-                </div>
-                <div className="line-clamp-2 text-xs text-muted-foreground">
-                  <Markdown content={doc.text} className="text-xs" />
-                </div>
-              </button>
-            ))}
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
+                <p className="text-xs text-muted-foreground">Total documents</p>
+                <p className="text-lg font-semibold text-zinc-100">
+                  {kbStats.totalDocs}
+                </p>
+              </div>
+              <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
+                <p className="text-xs text-muted-foreground">Total words</p>
+                <p className="text-lg font-semibold text-zinc-100">
+                  {kbStats.totalWords}
+                </p>
+              </div>
+              <div className="rounded-lg border border-zinc-800 bg-zinc-900/40 p-3">
+                <p className="text-xs text-muted-foreground">Average words</p>
+                <p className="text-lg font-semibold text-zinc-100">
+                  {kbStats.avgWords}
+                </p>
+              </div>
+            </div>
+
+            <KBDocumentList
+              documents={kbDocuments}
+              selectedId={selectedDocumentId}
+              onSelect={onDocumentSelect}
+              onEdit={onDocumentSelect}
+              onDelete={handleDeleteDocument}
+            />
           </div>
         )}
       </div>
@@ -518,62 +416,11 @@ export function KnowledgeBaseSection({
 
             {/* VIEW 2: DOCUMENT UPLOAD */}
             {currentView === "document" && (
-              <div className="flex flex-col h-full justify-between">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  className="hidden"
-                  accept=".txt,.md,text/plain,text/markdown"
-                  multiple
-                  onChange={(event) => handleFilesPicked(event.target.files)}
-                />
-                <div
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => fileInputRef.current?.click()}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault();
-                      fileInputRef.current?.click();
-                    }
-                  }}
-                  className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-zinc-700 rounded-xl bg-zinc-900/50 hover:bg-zinc-900 hover:border-zinc-600 transition-colors cursor-pointer p-12"
-                >
-                  <div className="bg-zinc-800 p-4 rounded-full mb-4">
-                    <UploadCloud className="h-8 w-8 text-zinc-400" />
-                  </div>
-                  <h3 className="text-lg font-medium text-zinc-200">
-                    Click to upload or drag and drop
-                  </h3>
-                  <p className="text-sm text-zinc-500 mt-2">
-                    TXT, MD (Max 10MB)
-                  </p>
-                  {uploadFiles.length > 0 && (
-                    <div className="mt-4 text-xs text-zinc-400">
-                      {uploadFiles.map((file) => file.name).join(", ")}
-                    </div>
-                  )}
-                </div>
-                {errorMessage && (
-                  <p className="text-sm text-red-400 mt-4">{errorMessage}</p>
-                )}
-                <div className="flex justify-end gap-3 pt-6">
-                  <Button
-                    variant="ghost"
-                    onClick={() => setOpen(false)}
-                    className="text-zinc-400 hover:text-zinc-100"
-                  >
-                    Cancel
-                  </Button>
-                  {/* Button Standar (Primary) */}
-                  <Button
-                    onClick={handleUploadDocuments}
-                    disabled={isSubmitting || !botProfile?._id}
-                  >
-                    {isSubmitting ? "Uploading..." : "Upload Documents"}
-                  </Button>
-                </div>
-              </div>
+              <PdfUploadHandler
+                botId={botProfile?._id}
+                onCancel={() => setOpen(false)}
+                onComplete={() => setOpen(false)}
+              />
             )}
 
             {/* VIEW 3: INLINE TEXT */}
@@ -598,10 +445,27 @@ export function KnowledgeBaseSection({
                     placeholder="Enter your text content here..."
                     className="max-h-[400px] min-h-[200px] bg-zinc-900 border-zinc-700 focus:ring-zinc-600 text-zinc-100 font-mono text-sm leading-relaxed placeholder:text-zinc-600 resize-none p-4 overflow-y-auto"
                     value={inlineContent}
-                    onChange={(event) => setInlineContent(event.target.value)}
+                    onChange={(event) => {
+                      setInlineContent(event.target.value);
+                      if (errorMessage) setErrorMessage(null);
+                    }}
                   />
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-muted-foreground">
+                      Limit {KB_LIMITS.MAX_TEXT_LENGTH} characters
+                    </span>
+                    <span className={inlineCountClass}>
+                      {inlineCharCount} / {KB_LIMITS.MAX_TEXT_LENGTH}
+                    </span>
+                  </div>
                 </div>
-                {errorMessage && (
+                {inlineErrorText && (
+                  <p className="text-sm text-red-400">{inlineErrorText}</p>
+                )}
+                {!inlineErrorText && inlineWarningText && (
+                  <p className="text-sm text-yellow-400">{inlineWarningText}</p>
+                )}
+                {errorMessage && !inlineErrorText && (
                   <p className="text-sm text-red-400">{errorMessage}</p>
                 )}
                 <div className="flex justify-end gap-3">
@@ -615,7 +479,12 @@ export function KnowledgeBaseSection({
                   {/* Button Standar (Primary) */}
                   <Button
                     onClick={handleAddInline}
-                    disabled={isSubmitting || !botProfile?._id}
+                    disabled={
+                      isSubmitting ||
+                      !botProfile?._id ||
+                      !inlineValidation.valid ||
+                      inlineLimitReached
+                    }
                   >
                     {isSubmitting ? "Saving..." : "Add Snippet"}
                   </Button>
@@ -625,67 +494,11 @@ export function KnowledgeBaseSection({
 
             {/* VIEW 4: WEBSITE */}
             {currentView === "website" && (
-              <div className="flex flex-col h-full">
-                <div className="flex flex-col md:flex-row gap-8 items-stretch h-full">
-                  <div className="flex-1 space-y-6">
-                    <div className="space-y-3">
-                      <label className="text-sm font-medium text-zinc-300">
-                        Website Link
-                      </label>
-                      <p className="text-xs text-zinc-500">
-                        We will crawl this URL to find answers.
-                      </p>
-                      <div className="relative">
-                        <Globe className="absolute left-3 top-3 h-4 w-4 text-zinc-500" />
-                        <Input
-                          placeholder="https://example.com/docs"
-                          className="pl-9 bg-zinc-900 border-zinc-700 focus:ring-zinc-600 text-zinc-100 placeholder:text-zinc-600"
-                          value={websiteUrl}
-                          onChange={(event) =>
-                            setWebsiteUrl(event.target.value)
-                          }
-                        />
-                      </div>
-                    </div>
-                  </div>
-                  {/* Visual Skeleton (Sama kayak sebelumnya) */}
-                  <div className="hidden md:flex w-[300px] bg-zinc-900 border border-zinc-800 rounded-xl items-center justify-center p-6">
-                    <div className="w-full aspect-[4/3] bg-zinc-800/50 rounded-lg p-3 space-y-3 border border-zinc-700/50">
-                      <div className="flex gap-2 items-center border-b border-zinc-700/50 pb-2">
-                        <div className="h-2 w-2 rounded-full bg-red-500/50"></div>
-                        <div className="h-2 w-2 rounded-full bg-yellow-500/50"></div>
-                        <div className="h-2 w-2 rounded-full bg-green-500/50"></div>
-                      </div>
-                      <div className="flex gap-3 h-full">
-                        <div className="w-1/3 h-24 bg-zinc-700/30 rounded"></div>
-                        <div className="flex-1 space-y-2">
-                          <div className="h-2 w-3/4 bg-zinc-700/50 rounded"></div>
-                          <div className="h-2 w-1/2 bg-zinc-700/50 rounded"></div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                {errorMessage && (
-                  <p className="text-sm text-red-400 mt-4">{errorMessage}</p>
-                )}
-                <div className="mt-auto pt-6 flex justify-end gap-3 border-t border-zinc-800">
-                  <Button
-                    variant="ghost"
-                    onClick={() => setOpen(false)}
-                    className="text-zinc-400 hover:text-zinc-100"
-                  >
-                    Cancel
-                  </Button>
-                  {/* Button Standar (Primary) */}
-                  <Button
-                    onClick={handleAddWebsite}
-                    disabled={isSubmitting || !botProfile?._id}
-                  >
-                    {isSubmitting ? "Saving..." : "Discover Pages"}
-                  </Button>
-                </div>
-              </div>
+              <WebsiteScraperHandler
+                botId={botProfile?._id}
+                onCancel={() => setOpen(false)}
+                onComplete={() => setOpen(false)}
+              />
             )}
           </div>
         </DialogContent>

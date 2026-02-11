@@ -3,22 +3,30 @@
   "type": "module",
   "scripts": {
     "dev": "convex  dev",
-    "setup": "convex dev --until-success"
+    "setup": "convex dev --until-success",
+    "test": "dotenv -e .env.test -- vitest run"
   },
   "dependencies": {
     "@ai-sdk/google": "^3.0.18",
     "@ai-sdk/groq": "^3.0.19",
     "@ai-sdk/openai": "^3.0.23",
     "ai": "^6.0.62",
+    "cheerio": "^1.2.0",
     "convex": "^1.31.6",
+    "pdf-parse": "^2.4.5",
+    "pdfjs-dist": "5.4.296",
     "zod": "^3.25.76"
   },
   "devDependencies": {
+    "@edge-runtime/vm": "^5.0.0",
     "@types/node": "^20.5.9",
     "@workspace/eslint-config": "workspace:*",
     "@workspace/typescript-config": "workspace:*",
+    "convex-test": "^0.0.41",
+    "dotenv-cli": "^11.0.0",
     "eslint": "^9.32.0",
-    "typescript": "^5.9.2"
+    "typescript": "^5.9.2",
+    "vitest": "^3.2.4"
   },
   "exports": {
     "./convex": "./convex/*.ts"

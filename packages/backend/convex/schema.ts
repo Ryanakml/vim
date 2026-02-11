@@ -29,9 +29,9 @@ export default defineSchema({
     history_reset: v.string(),
 
     // Model Configuration
-    model_provider: v.optional(v.string()),
-    model_id: v.optional(v.string()),
-    api_key: v.optional(v.string()),
+    model_provider: v.optional(v.union(v.string(), v.null())),
+    model_id: v.optional(v.union(v.string(), v.null())),
+    api_key: v.optional(v.union(v.string(), v.null())),
     system_prompt: v.optional(v.string()),
     temperature: v.optional(v.number()),
     max_tokens: v.optional(v.number()),
@@ -103,10 +103,48 @@ export default defineSchema({
     botId: v.id("botProfiles"),
     text: v.string(),
     embedding: v.array(v.float64()),
+
+    // Source tracking
+    source_type: v.optional(
+      v.union(
+        v.literal("inline"),
+        v.literal("pdf"),
+        v.literal("website"),
+        v.literal("notion"),
+      ),
+    ),
+    source_metadata: v.optional(
+      v.object({
+        // PDF metadata
+        filename: v.optional(v.string()),
+        file_size_bytes: v.optional(v.number()),
+        total_pages: v.optional(v.number()),
+        extracted_page_range: v.optional(
+          v.object({
+            start: v.number(),
+            end: v.number(),
+          }),
+        ),
+
+        // Website metadata
+        url: v.optional(v.string()),
+        domain: v.optional(v.string()),
+        scrape_timestamp: v.optional(v.number()),
+        content_hash: v.optional(v.string()),
+        is_dynamic_content: v.optional(v.boolean()),
+
+        // Common metadata
+        original_size_chars: v.optional(v.number()),
+        chunk_index: v.optional(v.number()),
+        chunk_total: v.optional(v.number()),
+        processing_timestamp: v.number(),
+      }),
+    ),
   })
     .index("by_bot", ["botId"])
     .index("by_user_id", ["user_id"])
     .index("by_user_bot", ["user_id", "botId"])
+    .index("by_source_type", ["botId", "source_type"])
     .vectorIndex("by_embedding", {
       vectorField: "embedding",
       dimensions: 768,
@@ -153,6 +191,19 @@ export default defineSchema({
     .index("by_botId_createdAt", ["botId", "createdAt"])
     .index("by_user_id", ["user_id"])
     .index("by_user_createdAt", ["user_id", "createdAt"]),
+
+  // Tabel 6.1: Knowledge Base Usage Logs
+  kb_usage_logs: defineTable({
+    user_id: v.optional(v.string()),
+    botId: v.id("botProfiles"),
+    conversationId: v.id("conversations"),
+    documentId: v.id("documents"),
+    similarity: v.float64(),
+    timestamp: v.number(),
+  })
+    .index("by_bot_timestamp", ["botId", "timestamp"])
+    .index("by_document", ["documentId"])
+    .index("by_conversation", ["conversationId"]),
 
   // Tabel 7: Public Sessions (Stateless public chat tokens)
   // ✅ Used for public widget authentication (no Clerk required)

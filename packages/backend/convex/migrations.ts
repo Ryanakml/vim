@@ -177,6 +177,61 @@ export const migrateUserIdForDocuments = mutation({
   },
 });
 
+/**
+ * Migration: Backfill source metadata for existing documents
+ *
+ * Strategy:
+ * - Set source_type to "inline" when missing
+ * - Add processing_timestamp based on _creationTime when metadata is missing
+ */
+export const migrateDocumentsSourceMetadata = mutation({
+  handler: async (ctx) => {
+    const documents = await ctx.db.query("documents").collect();
+
+    let updatedCount = 0;
+    let skippedCount = 0;
+    let errorCount = 0;
+
+    for (const doc of documents) {
+      try {
+        const hasSourceType = Boolean(doc.source_type);
+        const hasProcessingTimestamp = Boolean(
+          doc.source_metadata?.processing_timestamp,
+        );
+
+        if (hasSourceType && hasProcessingTimestamp) {
+          skippedCount++;
+          continue;
+        }
+
+        const source_metadata = {
+          ...(doc.source_metadata || {}),
+          processing_timestamp:
+            doc.source_metadata?.processing_timestamp ?? doc._creationTime,
+        };
+
+        await ctx.db.patch(doc._id, {
+          source_type: doc.source_type ?? "inline",
+          source_metadata,
+        });
+
+        updatedCount++;
+      } catch (error) {
+        errorCount++;
+        console.error(`Failed to migrate document ${doc._id}:`, error);
+      }
+    }
+
+    return {
+      success: true,
+      message: `Documents: Updated ${updatedCount}, Skipped ${skippedCount}, Errors ${errorCount}`,
+      updatedCount,
+      skippedCount,
+      errorCount,
+    };
+  },
+});
+
 // ===== AI LOGS =====
 
 /**
