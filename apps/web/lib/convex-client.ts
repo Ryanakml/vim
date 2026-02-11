@@ -478,6 +478,19 @@ export function useKnowledgeUtilization(
 }
 
 /**
+ * Hook to fetch knowledge base usage stats
+ */
+export function useKBStats(
+  botId?: Id<"botProfiles"> | "skip",
+  days: number = 7,
+) {
+  return useQuery(
+    api["kbanalytics"].getKBStats,
+    botId && botId !== "skip" ? { botId, days } : "skip",
+  );
+}
+
+/**
  * Hook to fetch all knowledge documents for a bot
  * Returns array of documents with id, text, and createdAt
  */
@@ -486,6 +499,27 @@ export function useKnowledgeDocuments(botId?: Id<"botProfiles"> | "skip") {
     api.knowledge.getKnowledgeDocuments,
     botId && botId !== "skip" ? { botId } : "skip",
   );
+}
+
+/**
+ * Hook to parse PDF files and add them as knowledge chunks
+ */
+export function useParsePDFAndAddKnowledge() {
+  return useAction(api.knowledge.parsePDFAndAddKnowledge);
+}
+
+/**
+ * Hook to scrape a website and add it as knowledge chunks
+ */
+export function useScrapeWebsiteAndAddKnowledge() {
+  return useAction(api.knowledge.scrapeWebsiteAndAddKnowledge);
+}
+
+/**
+ * Hook to add knowledge with source metadata
+ */
+export function useAddKnowledgeWithMetadata() {
+  return useAction(api.knowledge.addKnowledgeWithMetadata);
 }
 
 /**

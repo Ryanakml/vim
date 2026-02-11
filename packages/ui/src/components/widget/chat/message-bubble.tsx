@@ -73,6 +73,40 @@ const CTA_ORDER: Record<CtaLink["type"], number> = {
   email: 1,
 };
 
+const getReadableTextColor = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) return "#FFFFFF";
+
+  const hexMatch = trimmed.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  if (hexMatch) {
+    let hex = hexMatch[1];
+    if (hex!.length === 3) {
+      hex = hex!
+        .split("")
+        .map((char) => `${char}${char}`)
+        .join("");
+    }
+    const r = parseInt(hex!.slice(0, 2), 16);
+    const g = parseInt(hex!.slice(2, 4), 16);
+    const b = parseInt(hex!.slice(4, 6), 16);
+    const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+    return luminance > 0.6 ? "#111827" : "#F9FAFB";
+  }
+
+  const rgbMatch = trimmed.match(
+    /^rgba?\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})/i,
+  );
+  if (rgbMatch) {
+    const r = Number(rgbMatch[1]);
+    const g = Number(rgbMatch[2]);
+    const b = Number(rgbMatch[3]);
+    const luminance = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+    return luminance > 0.6 ? "#111827" : "#F9FAFB";
+  }
+
+  return "#FFFFFF";
+};
+
 const defaultCtaLabel = (type: CtaLink["type"]) =>
   type === "whatsapp" ? "Chat on WhatsApp" : "Email Support";
 
@@ -185,10 +219,11 @@ export function MessageBubble({
   const ctaPanelStyle = {
     "--cta-panel-bg": themeMode === "light" ? "#F8FAFC" : "#1F1F22",
     "--cta-panel-border": themeMode === "light" ? "#E4E4E7" : "#3F3F46",
-    "--cta-btn-bg": themeMode === "light" ? "#FFFFFF" : "#27272A",
-    "--cta-btn-border": themeMode === "light" ? "#D4D4D8" : "#3F3F46",
-    "--cta-btn-text": themeMode === "light" ? "#111827" : "#F4F4F5",
-    "--cta-btn-hover": themeMode === "light" ? "#F1F5F9" : "#32323A",
+  } as React.CSSProperties;
+  const ctaButtonStyle = {
+    backgroundColor: primaryColor,
+    borderColor: primaryColor,
+    color: getReadableTextColor(primaryColor ?? ""),
   } as React.CSSProperties;
 
   const handleFeedback = (feedback: "helpful" | "not-helpful") => {
@@ -289,7 +324,8 @@ export function MessageBubble({
                 variant="secondary"
                 size="sm"
                 asChild
-                className="w-full justify-center border border-[var(--cta-btn-border)] bg-[var(--cta-btn-bg)] text-[var(--cta-btn-text)] hover:bg-[var(--cta-btn-hover)] hover:text-[var(--cta-btn-text)]"
+                className="w-full justify-center border transition-opacity hover:opacity-90"
+                style={ctaButtonStyle}
               >
                 <a
                   href={link.href}

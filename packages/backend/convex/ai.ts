@@ -458,7 +458,7 @@ export const generateBotResponse = action({
           );
         } else {
           const google = createGoogleGenerativeAI({ apiKey: embeddingApiKey });
-          const embeddingModel = google.embeddingModel("text-embedding-004");
+          const embeddingModel = google.embeddingModel("gemini-embedding-001");
 
           const { embedding } = await embed({
             model: embeddingModel,
@@ -472,6 +472,32 @@ export const generateBotResponse = action({
           });
 
           knowledgeChunksCount = nearest.length;
+
+          if (nearest.length > 0) {
+            try {
+              const identity = await ctx.auth.getUserIdentity();
+              if (identity) {
+                await ctx.runMutation(
+                  (internal as any)["kbanalytics"].logKBUsage,
+                  {
+                    user_id: identity.subject,
+                    botId,
+                    conversationId,
+                    retrievedDocumentIds: nearest.map((match) => match._id),
+                    querySimilarities: nearest.map(
+                      (match) => match._score ?? 0,
+                    ),
+                  },
+                );
+              }
+            } catch (error) {
+              console.warn(
+                `[generateBotResponse] Failed to log KB usage: ${
+                  error instanceof Error ? error.message : String(error)
+                }`,
+              );
+            }
+          }
 
           if (nearest.length > 0) {
             const docs = await ctx.runQuery(
