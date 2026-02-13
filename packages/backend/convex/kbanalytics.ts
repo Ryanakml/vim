@@ -3,7 +3,7 @@ import { internalMutation, query } from "./_generated/server.js";
 
 export const logKBUsage = internalMutation({
   args: {
-    user_id: v.string(),
+    user_id: v.optional(v.string()), // null for public/widget users
     botId: v.id("botProfiles"),
     conversationId: v.id("conversations"),
     retrievedDocumentIds: v.array(v.id("documents")),

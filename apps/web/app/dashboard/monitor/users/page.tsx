@@ -203,8 +203,8 @@ export default function UsersPage() {
               No users found
             </h3>
             <p className="text-sm text-zinc-500 mt-2 max-w-sm">
-              We could not find any users matching your criteria. Try adjusting
-              your filters or wait for new interactions.
+              We could not fin users matching your criteria. Try adjusting your
+              filters or wait for new interactions.
             </p>
             {searchQuery && (
               <Button

@@ -13,6 +13,7 @@ export {
   getSessionDetails,
   getConversationStatus,
   generateReply,
+  generateReplyStream,
   endSession,
   trackEvent,
 } from "./functions/public/index.js";

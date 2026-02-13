@@ -34,7 +34,6 @@ export function ChatContainer({
   error,
   onSendMessage,
   onRefresh,
-  onClose: _onClose,
   onFeedback,
   onLeadClick,
   className,

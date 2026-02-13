@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation } from "./_generated/server.js";
+import { mutation, query } from "./_generated/server.js";
 import type { Doc, Id, TableNames } from "./_generated/dataModel.js";
 
 type EscalationConfig = {
@@ -413,5 +413,35 @@ export const insertPublicSession = mutation({
     }
 
     return await ctx.db.insert("publicSessions", record);
+  },
+});
+
+// 1. Fungsi buat narik data Public Session
+export const getPublicSession = query({
+  args: { sessionId: v.string() },
+  handler: async (ctx, args) => {
+    // Pake ilmu yang tadi: Cast ke Id biar ga any
+    return await ctx.db.get(args.sessionId as Id<"publicSessions">);
+  },
+});
+
+// 2. Fungsi buat narik data Conversation
+export const getConversation = query({
+  args: { conversationId: v.string() },
+  handler: async (ctx, args) => {
+    return await ctx.db.get(args.conversationId as Id<"conversations">);
+  },
+});
+
+// 3. Fungsi buat narik data AI Logs
+export const getAiLogsForConversation = query({
+  args: { conversationId: v.string() },
+  handler: async (ctx, args) => {
+    // Karena AI logs biasanya banyak, kita pake metode filter/index
+    return await ctx.db
+      .query("aiLogs")
+      // Asumsi lu punya kolom 'conversation_id' di tabel aiLogs
+      .filter((q) => q.eq(q.field("conversationId"), args.conversationId))
+      .collect();
   },
 });

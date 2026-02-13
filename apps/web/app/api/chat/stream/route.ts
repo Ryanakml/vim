@@ -3,6 +3,7 @@ import { streamText } from "ai";
 import { ConvexHttpClient } from "convex/browser";
 import { api } from "@workspace/backend/convex/_generated/api";
 import { auth } from "@clerk/nextjs/server";
+import { normalizeModelProvider } from "@workspace/backend/convex/modelproviders";
 
 // ✅ CRITICAL: Set execution timeout for long-running streams
 export const maxDuration = 60; // Seconds - adjust based on Vercel plan
@@ -98,7 +99,7 @@ export async function POST(request: NextRequest) {
       `[stream] Fetching context for botId: ${botId}, conversationId: ${conversationId}`,
     );
 
-    const [botConfig, allMessages] = await Promise.all([
+    const [botConfig, allMessages, rag] = await Promise.all([
       // Query 1: Bot configuration (model, provider, API key, system prompt)
       convex.query(api.ai.getBotConfigForStream, { botId: botId as any }),
 
@@ -106,6 +107,13 @@ export async function POST(request: NextRequest) {
       convex.query(api.ai.getConversationHistoryForStream, {
         botId: botId as any,
         conversationId: conversationId as any,
+      }),
+
+      // Query 3: RAG context (KB)
+      convex.query(api.ai.getRagContextForStream, {
+        botId: botId as any,
+        conversationId: conversationId as any,
+        userMessage: userMessage as string,
       }),
     ]);
 
@@ -135,18 +143,36 @@ export async function POST(request: NextRequest) {
       content: msg.content,
     }));
 
-    // Step 6: Build system prompt
+    // Step 6: Build system prompt (include KB context when available)
     const baseSystemPrompt =
       botConfig.system_prompt || "You are a helpful assistant.";
-    const escalationPrompt = buildEscalationPrompt(botConfig.escalation);
-    const systemPrompt = escalationPrompt
-      ? `${baseSystemPrompt}\n\n${escalationPrompt}`
+
+    const contextBlock = rag?.contextBlock || "";
+    knowledgeChunksCount = rag?.knowledgeChunksCount || 0;
+
+    const systemPromptWithContext = contextBlock
+      ? `${baseSystemPrompt}\n\nRelevant Knowledge Base Information:\n-----------------------------------\n${contextBlock}\n-----------------------------------\nUse the information above to answer the user's question if relevant.`
       : baseSystemPrompt;
 
-    // Step 7: Initialize AI model (OpenAI, Groq, Google, Anthropic, etc.)
+    const escalationPrompt = buildEscalationPrompt(botConfig.escalation);
+    const systemPrompt = escalationPrompt
+      ? `${systemPromptWithContext}\n\n${escalationPrompt}`
+      : systemPromptWithContext;
+
+    // Step 7: Initialize AI model (OpenAI, Groq, Google AI, Anthropic)
     let model;
     try {
-      switch (botConfig.model_provider) {
+      const provider = normalizeModelProvider(botConfig.model_provider);
+      if (!provider) {
+        return NextResponse.json(
+          {
+            error: `Unsupported model provider: ${botConfig.model_provider}`,
+          },
+          { status: 400 },
+        );
+      }
+
+      switch (provider) {
         case "Groq": {
           const { createGroq } = await import("@ai-sdk/groq");
           model = createGroq({ apiKey: botConfig.api_key })(botConfig.model_id);
@@ -159,7 +185,7 @@ export async function POST(request: NextRequest) {
           );
           break;
         }
-        case "Google": {
+        case "Google AI": {
           const { createGoogleGenerativeAI } = await import("@ai-sdk/google");
           model = createGoogleGenerativeAI({ apiKey: botConfig.api_key })(
             botConfig.model_id,
@@ -176,7 +202,7 @@ export async function POST(request: NextRequest) {
         default:
           return NextResponse.json(
             {
-              error: `Unsupported model provider: ${botConfig.model_provider}`,
+              error: `Unsupported model provider: ${provider}`,
             },
             { status: 400 },
           );

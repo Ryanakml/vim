@@ -1,22 +1,17 @@
 /**
- * PUBLIC API FUNCTIONS
+ * PUBLIC FUNCTIONS BARREL
  *
- * These functions are public-facing wrappers that:
- * 1. Validate all inputs (organization_id, bot_id, visitor_id, session_id)
- * 2. Verify session ownership before allowing access
- * 3. Delegate to internal mutations/queries for actual logic
- *
- * Used by: Public widget embed script
- * No authentication required - all validation via IDs
- * All functions validate against a "publicSessions" table for stateless security
+ * Centralized exports for Convex public functions.
+ * Imported by `convex/public.ts`.
  */
 
-export { getBotProfile } from "./getBotProfile";
-export { createSession } from "./createSession";
-export { sendMessage } from "./sendMessage";
-export { getMessages } from "./getMessages";
-export { getSessionDetails } from "./getSessionDetails";
-export { getConversationStatus } from "./getConversationStatus";
-export { generateReply } from "./generateReply";
-export { endSession } from "./endSession";
-export { trackEvent } from "./trackEvent";
+export { getBotProfile } from "./getBotProfile.js";
+export { createSession } from "./createSession.js";
+export { sendMessage } from "./sendMessage.js";
+export { getMessages } from "./getMessages.js";
+export { getSessionDetails } from "./getSessionDetails.js";
+export { getConversationStatus } from "./getConversationStatus.js";
+export { generateReply } from "./generateReply.js";
+export { generateReplyStream } from "./generateReplyStream.js";
+export { endSession } from "./endSession.js";
+export { trackEvent } from "./trackEvent.js";

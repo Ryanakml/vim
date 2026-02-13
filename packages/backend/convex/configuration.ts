@@ -80,7 +80,7 @@ export const getBotConfigByBotId = internalQuery({
  *
  * Parameters:
  * - model_provider: string (e.g., "Google AI", "OpenAI", "Anthropic", "Groq")
- * - model_id: string (e.g., "gemini-2.5-pro", "gpt-4o")
+ * - model_id: string (e.g., "gemini-2.5-flash", "gpt-4o")
  * - api_key: string (encrypted API key for the selected model)
  * - system_prompt: string
  * - temperature: optional number (only sent from Advanced tab)

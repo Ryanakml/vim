@@ -1,5 +1,7 @@
 import { v } from "convex/values";
 import { mutation } from "../../_generated/server.js";
+import { api } from "../../_generated/api.js";
+import type { Id } from "../../_generated/dataModel.js";
 
 /**
  * PUBLIC MUTATION: End a public chat session
@@ -18,19 +20,21 @@ export const endSession = mutation({
     sessionId: v.string(),
     organizationId: v.string(),
     botId: v.string(),
+    visitorId: v.string(),
   },
   handler: async (ctx, args): Promise<{ success: boolean }> => {
-    // ✅ VALIDATION: Look up the session in publicSessions table
-    const session = await ctx.db
-      .query("publicSessions")
-      .filter((q) =>
-        q.and(
-          q.eq(q.field("_id"), args.sessionId),
-          q.eq(q.field("organizationId"), args.organizationId),
-          q.eq(q.field("botId"), args.botId),
-        ),
-      )
-      .first();
+    const session: {
+      _id: Id<"publicSessions">;
+      conversationId: Id<"conversations">;
+      organizationId: string;
+      botId: string;
+      visitorId: string;
+    } | null = await ctx.runQuery(api.public.getSessionDetails, {
+      sessionId: args.sessionId,
+      organizationId: args.organizationId,
+      botId: args.botId,
+      visitorId: args.visitorId,
+    });
 
     if (!session) {
       throw new Error(

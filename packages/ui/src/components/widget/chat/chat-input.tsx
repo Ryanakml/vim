@@ -34,7 +34,6 @@ export function ChatInput({
   // Explicit color values to prevent hydration flash in dark mode
   const inputBg = themeMode === "light" ? "#FFFFFF" : "#27272A";
   const inputText = themeMode === "light" ? "#18181B" : "#FAFAFA";
-  const placeholderColor = themeMode === "light" ? "#A1A1AA" : "#71717A";
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

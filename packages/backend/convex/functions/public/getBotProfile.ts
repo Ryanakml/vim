@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { query } from "../../_generated/server.js";
+import { Id } from "../../_generated/dataModel.js";
 
 /**
  * PUBLIC QUERY: Get bot profile for embed widget
@@ -19,18 +20,9 @@ export const getBotProfile = query({
     botId: v.string(),
   },
   handler: async (ctx, args) => {
-    // ✅ VALIDATION: Verify bot exists with provided IDs
-    const botProfile = await ctx.db
-      .query("botProfiles")
-      .filter((q) =>
-        q.and(
-          q.eq(q.field("_id"), args.botId),
-          q.eq(q.field("organization_id"), args.organizationId),
-        ),
-      )
-      .first();
+    const botProfile = await ctx.db.get(args.botId as Id<"botProfiles">);
 
-    if (!botProfile) {
+    if (!botProfile || botProfile.organization_id !== args.organizationId) {
       throw new Error("Bot not found or organization mismatch");
     }
 

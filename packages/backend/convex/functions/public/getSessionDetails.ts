@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { query } from "../../_generated/server.js";
+import type { Id } from "../../_generated/dataModel.js";
 
 /**
  * INTERNAL HELPER QUERY: Get session details with validation
@@ -23,27 +24,45 @@ export const getSessionDetails = query({
     visitorId: v.string(),
   },
   handler: async (ctx, args) => {
-    // Query for session matching all provided IDs
-    const session = await ctx.db
+    // Query publicSessions table using the by_session_lookup index
+    const sessions = await ctx.db
       .query("publicSessions")
-      .filter((q) =>
-        q.and(
-          q.eq(q.field("_id"), args.sessionId as any),
-          q.eq(q.field("organizationId"), args.organizationId),
-          q.eq(q.field("botId"), args.botId),
-          q.eq(q.field("visitorId"), args.visitorId),
-        ),
+      .withIndex("by_session_lookup", (q) =>
+        q
+          .eq("organizationId", args.organizationId)
+          .eq("botId", args.botId)
+          .eq("visitorId", args.visitorId),
       )
-      .first();
+      .collect();
+
+    // Find the specific session by ID
+    const session = sessions.find((s) => String(s._id) === args.sessionId);
 
     if (!session) {
       return null;
     }
 
+    if (session.status === "ended") {
+      return null;
+    }
+
+    const conversation = await ctx.db.get(session.conversationId);
+    if (!conversation) {
+      return null;
+    }
+
+    if (
+      String(conversation.bot_id) !== args.botId ||
+      conversation.organization_id !== args.organizationId ||
+      conversation.visitor_id !== args.visitorId
+    ) {
+      return null;
+    }
+
     // Return session with conversationId for use in AI generation
     return {
-      _id: session._id,
-      conversationId: session.conversationId,
+      _id: session._id as Id<"publicSessions">,
+      conversationId: session.conversationId as Id<"conversations">,
       organizationId: session.organizationId,
       botId: session.botId,
       visitorId: session.visitorId,

@@ -16,39 +16,34 @@ import type { MessageBubbleProps } from "../types.ts";
  * For full markdown rendering, should be replaced with react-markdown
  */
 function SimpleMarkdown({ content }: { content: string }) {
-  // Simple markdown support for bold, italic, code
-  const parts = [];
-  let lastIndex = 0;
-  const patterns = [
-    {
-      regex: /\*\*(.+?)\*\*/g,
-      wrapper: (text: string) => <strong key={text}>{text}</strong>,
-    },
-    {
-      regex: /\*(.+?)\*/g,
-      wrapper: (text: string) => <em key={text}>{text}</em>,
-    },
-    {
-      regex: /`(.+?)`/g,
-      wrapper: (text: string) => (
-        <code key={text} className="bg-zinc-700/30 px-1 rounded text-xs">
-          {text}
-        </code>
-      ),
-    },
-  ];
+  const tokens = content
+    .split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g)
+    .filter(Boolean);
 
-  let result: React.ReactNode = content;
-  for (const { regex, wrapper } of patterns) {
-    const matches = [...content.matchAll(regex)];
-    if (matches.length > 0) {
-      result = content.replace(regex, (match, group) => {
-        return group; // Simplified - actual implementation would need more care
-      });
-    }
-  }
-
-  return <>{result}</>;
+  return (
+    <>
+      {tokens.map((token, index) => {
+        if (
+          token.startsWith("**") &&
+          token.endsWith("**") &&
+          token.length > 4
+        ) {
+          return <strong key={index}>{token.slice(2, -2)}</strong>;
+        }
+        if (token.startsWith("*") && token.endsWith("*") && token.length > 2) {
+          return <em key={index}>{token.slice(1, -1)}</em>;
+        }
+        if (token.startsWith("`") && token.endsWith("`") && token.length > 2) {
+          return (
+            <code key={index} className="bg-zinc-700/30 px-1 rounded text-xs">
+              {token.slice(1, -1)}
+            </code>
+          );
+        }
+        return <span key={index}>{token}</span>;
+      })}
+    </>
+  );
 }
 
 /**
@@ -177,12 +172,12 @@ function extractCtaLinks(content: string) {
   }
 
   const orderedLinks = ctaLinks
-    .map((link, index) => ({ ...link, _index: index }))
-    .sort((a, b) => {
+    .map((link, index) => [link, index] as const)
+    .sort(([a, aIndex], [b, bIndex]) => {
       const typeDiff = CTA_ORDER[a.type] - CTA_ORDER[b.type];
-      return typeDiff !== 0 ? typeDiff : a._index - b._index;
+      return typeDiff !== 0 ? typeDiff : aIndex - bIndex;
     })
-    .map(({ _index, ...link }) => link);
+    .map(([link]) => link);
 
   let cleanText = cleanLines.join("\n").trim();
   if (!cleanText) {
@@ -219,11 +214,13 @@ export function MessageBubble({
   const ctaPanelStyle = {
     "--cta-panel-bg": themeMode === "light" ? "#F8FAFC" : "#1F1F22",
     "--cta-panel-border": themeMode === "light" ? "#E4E4E7" : "#3F3F46",
+    borderRadius: `${cornerRadius * 0.75}px`,
   } as React.CSSProperties;
   const ctaButtonStyle = {
     backgroundColor: primaryColor,
     borderColor: primaryColor,
     color: getReadableTextColor(primaryColor ?? ""),
+    borderRadius: `${cornerRadius}px`,
   } as React.CSSProperties;
 
   const handleFeedback = (feedback: "helpful" | "not-helpful") => {
@@ -315,7 +312,7 @@ export function MessageBubble({
             </span>
           )}
           <div
-            className="flex flex-col gap-2 rounded-xl border px-3 py-2 bg-[var(--cta-panel-bg)] border-[var(--cta-panel-border)]"
+            className="flex flex-col gap-2 border px-3 py-2 bg-[var(--cta-panel-bg)] border-[var(--cta-panel-border)]"
             style={ctaPanelStyle}
           >
             {ctaLinks.map((link) => (

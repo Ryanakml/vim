@@ -9,7 +9,14 @@ import {
 } from "@workspace/ui/components/dialog";
 import { Input } from "@workspace/ui/components/input";
 import { Textarea } from "@workspace/ui/components/textarea";
-import { FileText, Globe, Type, Plus, ArrowLeft, LucideIcon } from "lucide-react";
+import {
+  FileText,
+  Globe,
+  Type,
+  Plus,
+  ArrowLeft,
+  LucideIcon,
+} from "lucide-react";
 import {
   useAddKnowledgeWithMetadata,
   useBotProfile,
@@ -134,11 +141,11 @@ export function KnowledgeBaseSection({
   const addKnowledgeWithMetadata = useAddKnowledgeWithMetadata();
   const deleteDocument = useDeleteDocument();
 
-  const kbDocuments = useMemo(() => {
+  const kbDocuments = useMemo<Doc<"documents">[]>(() => {
     if (!knowledgeDocuments || !botProfile) return [];
 
     return knowledgeDocuments.map(
-      (doc) =>
+      (doc: any) =>
         ({
           _id: doc.id,
           _creationTime: doc.createdAt ?? Date.now(),
@@ -157,9 +164,12 @@ export function KnowledgeBaseSection({
       return { totalDocs: 0, totalWords: 0, avgWords: 0 };
     }
 
-    const totalWords = kbDocuments.reduce((sum, doc) => {
-      return sum + calculateDocStats(doc.text).wordCount;
-    }, 0);
+    const totalWords = kbDocuments.reduce(
+      (sum: number, doc: Doc<"documents">) => {
+        return sum + calculateDocStats(doc.text).wordCount;
+      },
+      0,
+    );
 
     return {
       totalDocs: kbDocuments.length,

@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation } from "../../_generated/server.js";
 import { api } from "../../_generated/api.js";
+import type { Id } from "../../_generated/dataModel.js";
 
 function getNextUtcMidnight(timestamp: number): number {
   const date = new Date(timestamp);
@@ -67,17 +68,13 @@ export const createSession = mutation({
     visitorId: string;
   }> => {
     // ✅ VALIDATION 1: Verify bot exists and belongs to organization
-    const botProfile = await ctx.db
-      .query("botProfiles")
-      .filter((q) =>
-        q.and(
-          q.eq(q.field("_id"), args.botId),
-          q.eq(q.field("organization_id"), args.organizationId),
-        ),
-      )
-      .first();
+    const botId = ctx.db.normalizeId("botProfiles", args.botId);
+    if (!botId) {
+      throw new Error("Bot not found or does not belong to this organization");
+    }
+    const botProfile = await ctx.db.get(botId);
 
-    if (!botProfile) {
+    if (!botProfile || botProfile.organization_id !== args.organizationId) {
       throw new Error("Bot not found or does not belong to this organization");
     }
 
@@ -132,10 +129,10 @@ export const createSession = mutation({
     }
 
     // ✅ DELEGATION: Call internal createConversation (supports visitor_id)
-    const conversationId: string = await ctx.runMutation(
+    const conversationId: Id<"conversations"> = await ctx.runMutation(
       api.monitor.createConversation,
       {
-        bot_id: args.botId as any, // botId is v.id("botProfiles")
+        bot_id: botId,
         organization_id: args.organizationId,
         integration: "embed",
         topic: "Visitor Chat",
@@ -144,14 +141,17 @@ export const createSession = mutation({
     );
 
     // ✅ CREATE: Public session record for stateless verification
-    const sessionId: string = await ctx.db.insert("publicSessions" as any, {
-      organizationId: args.organizationId,
-      botId: args.botId,
-      visitorId: visitorId,
-      conversationId: conversationId,
-      createdAt: Date.now(),
-      status: "active",
-    });
+    const sessionId: Id<"publicSessions"> = await ctx.db.insert(
+      "publicSessions",
+      {
+        organizationId: args.organizationId,
+        botId: args.botId,
+        visitorId: visitorId,
+        conversationId,
+        createdAt: Date.now(),
+        status: "active",
+      },
+    );
 
     return {
       sessionId,
