@@ -1,5 +1,7 @@
 import { v } from "convex/values";
 import { query } from "../../_generated/server.js";
+import { api } from "../../_generated/api.js";
+import type { Id } from "../../_generated/dataModel.js";
 
 /**
  * PUBLIC QUERY: Get all messages for a public chat session
@@ -20,19 +22,29 @@ export const getMessages = query({
     botId: v.string(),
     visitorId: v.string(),
   },
-  handler: async (ctx, args) => {
-    // ✅ VALIDATION 1: Verify session exists and matches provided IDs
-    const session = await ctx.db
-      .query("publicSessions")
-      .filter((q) =>
-        q.and(
-          q.eq(q.field("_id"), args.sessionId as any),
-          q.eq(q.field("organizationId"), args.organizationId),
-          q.eq(q.field("botId"), args.botId),
-          q.eq(q.field("visitorId"), args.visitorId),
-        ),
-      )
-      .first();
+  handler: async (
+    ctx,
+    args,
+  ): Promise<
+    Array<{
+      id: Id<"messages">;
+      role: string;
+      content: string;
+      createdAt: number;
+    }>
+  > => {
+    const session: {
+      _id: Id<"publicSessions">;
+      conversationId: Id<"conversations">;
+      organizationId: string;
+      botId: string;
+      visitorId: string;
+    } | null = await ctx.runQuery(api.public.getSessionDetails, {
+      sessionId: args.sessionId,
+      organizationId: args.organizationId,
+      botId: args.botId,
+      visitorId: args.visitorId,
+    });
 
     if (!session) {
       throw new Error(

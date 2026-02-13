@@ -42,7 +42,8 @@ export default function ConfigurationsPage() {
   );
 
   // ===== GENERAL TAB STATES =====
-  const [selectedModel, setSelectedModel] = useState<ModelId>("gemini-2.5-pro");
+  const [selectedModel, setSelectedModel] =
+    useState<ModelId>("gemini-2.5-flash");
   const [, setModelProvider] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [modelProvider, setModelProviderState] = useState("");
@@ -63,7 +64,8 @@ export default function ConfigurationsPage() {
 
   const kbDocsLoading = knowledgeDocuments === undefined;
   const kbDocsForScore = useMemo(
-    () => knowledgeDocuments?.map((doc) => ({ text: doc.text || "" })) ?? [],
+    () =>
+      knowledgeDocuments?.map((doc: any) => ({ text: doc.text || "" })) ?? [],
     [knowledgeDocuments],
   );
   const kbCompleteness = useMemo(
@@ -170,7 +172,7 @@ export default function ConfigurationsPage() {
   // Guard against undefined modelConfig - reset to valid default if needed
   // This happens when old deprecated model is loaded from DB
   if (!modelConfig) {
-    setSelectedModel("gemini-2.5-pro");
+    setSelectedModel("gemini-2.5-flash");
     // Return early to prevent render errors - component will re-render after state updates
     return (
       <div className="flex h-[calc(100vh-4rem)] w-full items-center justify-center">
@@ -601,7 +603,7 @@ export default function ConfigurationsPage() {
           onModelConfigDeleted={() => {
             setApiKey("");
             setModelProviderState("");
-            setSelectedModel("gemini-2.5-pro");
+            setSelectedModel("gemini-2.5-flash");
           }}
         />
       </div>

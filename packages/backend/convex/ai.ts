@@ -7,9 +7,10 @@ import {
   mutation,
 } from "./_generated/server.js";
 import { api, internal } from "./_generated/api.js";
-import { embed, generateText, streamText } from "ai";
-import { createGoogleGenerativeAI } from "@ai-sdk/google";
+import { generateText, streamText } from "ai";
 import type { Doc } from "./_generated/dataModel.js";
+import { normalizeModelProvider } from "./modelproviders.js";
+import { retrieveRagContext } from "./rag.js";
 
 type EscalationConfig = {
   enabled?: boolean;
@@ -316,6 +317,101 @@ export const saveStreamedResponse = mutation({
   },
 });
 
+// ===== STREAMING (PUBLIC WIDGET) =====
+
+export const createStreamingBotMessage = internalMutation({
+  args: {
+    conversationId: v.id("conversations"),
+  },
+  handler: async (ctx, args) => {
+    const msgId = await ctx.db.insert("messages", {
+      conversation_id: args.conversationId,
+      role: "bot",
+      content: "",
+      created_at: Date.now(),
+    });
+    return msgId;
+  },
+});
+
+export const updateStreamingBotMessage = internalMutation({
+  args: {
+    messageId: v.id("messages"),
+    content: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.messageId, {
+      content: args.content,
+    });
+    return { success: true };
+  },
+});
+
+/**
+ * Query: Retrieve RAG context for dashboard streaming route
+ * Used by: apps/web/app/api/chat/stream/route.ts
+ */
+export const getRagContextForStream = query({
+  args: {
+    botId: v.id("botProfiles"),
+    conversationId: v.id("conversations"),
+    userMessage: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthorized: Must be logged in");
+    }
+
+    const userId = identity.subject;
+    const orgId = (identity.org_id as string | undefined) || undefined;
+
+    const botProfile = await ctx.db.get(args.botId);
+    if (!botProfile) {
+      throw new Error("Bot not found");
+    }
+
+    const isOwner = botProfile.user_id === userId;
+    const isOrgMatch = Boolean(orgId) && botProfile.organization_id === orgId;
+    if (!isOwner && !isOrgMatch) {
+      throw new Error("Unauthorized: Cannot access other user's bot");
+    }
+
+    const conversation = await ctx.db.get(args.conversationId);
+    if (!conversation) {
+      throw new Error("Conversation not found");
+    }
+    if ((conversation as any).bot_id !== args.botId) {
+      throw new Error("Unauthorized: Conversation does not belong to bot");
+    }
+
+    const botConfig = {
+      model_provider: botProfile.model_provider || null,
+      api_key: botProfile.api_key || null,
+    };
+
+    try {
+      const { contextBlock, knowledgeChunksCount } = await retrieveRagContext({
+        ctx,
+        botId: args.botId,
+        conversationId: args.conversationId,
+        userMessage: args.userMessage,
+        botConfig,
+        userIdForLogging: userId,
+      });
+
+      return { contextBlock, knowledgeChunksCount };
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      console.warn(
+        `[getRagContextForStream] RAG retrieval failed (continuing without context): ${errorMessage}`,
+      );
+      return { contextBlock: "", knowledgeChunksCount: 0 };
+    }
+  },
+});
+
 /**
  * Unified AI Response Generator
  *
@@ -441,94 +537,31 @@ export const generateBotResponse = action({
       "[generateBotResponse] STEP 3: Retrieving knowledge context...",
     );
     let contextBlock = "";
-    const trimmedUserMessage = userMessage.trim();
+    try {
+      const identity = await ctx.auth.getUserIdentity();
+      const { contextBlock: retrievedContext, knowledgeChunksCount: count } =
+        await retrieveRagContext({
+          ctx,
+          botId,
+          conversationId,
+          userMessage,
+          botConfig,
+          userIdForLogging: identity?.subject,
+        });
 
-    if (trimmedUserMessage.length > 5) {
-      try {
-        const embeddingApiKey =
-          process.env.GOOGLE_GENERATIVE_AI_API_KEY ||
-          process.env.GOOGLE_API_KEY ||
-          (botConfig.model_provider === "Google AI"
-            ? botConfig.api_key
-            : undefined);
+      contextBlock = retrievedContext;
+      knowledgeChunksCount = count;
 
-        if (!embeddingApiKey) {
-          console.warn(
-            "[generateBotResponse] Skipping RAG: Google API key not configured for embeddings.",
-          );
-        } else {
-          const google = createGoogleGenerativeAI({ apiKey: embeddingApiKey });
-          const embeddingModel = google.embeddingModel("gemini-embedding-001");
-
-          const { embedding } = await embed({
-            model: embeddingModel,
-            value: trimmedUserMessage,
-          });
-
-          const nearest = await ctx.vectorSearch("documents", "by_embedding", {
-            vector: embedding,
-            limit: 4,
-            filter: (q) => q.eq("botId", botId),
-          });
-
-          knowledgeChunksCount = nearest.length;
-
-          if (nearest.length > 0) {
-            try {
-              const identity = await ctx.auth.getUserIdentity();
-              if (identity) {
-                await ctx.runMutation(
-                  (internal as any)["kbanalytics"].logKBUsage,
-                  {
-                    user_id: identity.subject,
-                    botId,
-                    conversationId,
-                    retrievedDocumentIds: nearest.map((match) => match._id),
-                    querySimilarities: nearest.map(
-                      (match) => match._score ?? 0,
-                    ),
-                  },
-                );
-              }
-            } catch (error) {
-              console.warn(
-                `[generateBotResponse] Failed to log KB usage: ${
-                  error instanceof Error ? error.message : String(error)
-                }`,
-              );
-            }
-          }
-
-          if (nearest.length > 0) {
-            const docs = await ctx.runQuery(
-              internal.knowledge.getDocumentsByIds,
-              {
-                ids: nearest.map((match) => match._id),
-              },
-            );
-
-            const chunks = docs
-              .map((doc: any) => doc?.text)
-              .filter((text: any): text is string => Boolean(text));
-
-            if (chunks.length > 0) {
-              contextBlock = chunks.join("\n\n");
-              console.log(
-                `[generateBotResponse] ✓ Retrieved ${chunks.length} knowledge chunks for context`,
-              );
-            }
-          }
-        }
-      } catch (error) {
-        const errorMessage =
-          error instanceof Error ? error.message : String(error);
-        console.warn(
-          `[generateBotResponse] RAG retrieval failed (continuing without context): ${errorMessage}`,
+      if (knowledgeChunksCount > 0) {
+        console.log(
+          `[generateBotResponse] ✓ Retrieved ${knowledgeChunksCount} knowledge chunks for context`,
         );
       }
-    } else {
-      console.log(
-        "[generateBotResponse] Skipping RAG: user message too short for vector search.",
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      console.warn(
+        `[generateBotResponse] RAG retrieval failed (continuing without context): ${errorMessage}`,
       );
     }
 
@@ -538,8 +571,15 @@ export const generateBotResponse = action({
     );
     let model;
 
+    const provider = normalizeModelProvider(botConfig.model_provider);
+    if (!provider) {
+      const error = `Unsupported model provider: ${botConfig.model_provider}`;
+      console.error(`[generateBotResponse] ERROR STEP 4: ${error}`);
+      return { success: false, error };
+    }
+
     try {
-      switch (botConfig.model_provider) {
+      switch (provider) {
         case "Groq": {
           console.log("[generateBotResponse]   Importing Groq provider...");
           const { createGroq } = await import("@ai-sdk/groq");
@@ -572,8 +612,34 @@ export const generateBotResponse = action({
           break;
         }
 
+        case "Google AI": {
+          console.log(
+            "[generateBotResponse]   Importing Google Generative AI provider...",
+          );
+          const { createGoogleGenerativeAI } = await import("@ai-sdk/google");
+          const googleProvider = createGoogleGenerativeAI({
+            apiKey: botConfig.api_key,
+          });
+          model = googleProvider(botConfig.model_id);
+          console.log("[generateBotResponse] ✓ Google AI model initialized");
+          break;
+        }
+
+        case "Anthropic": {
+          console.log(
+            "[generateBotResponse]   Importing Anthropic provider...",
+          );
+          const { createAnthropic } = await import("@ai-sdk/anthropic");
+          const anthropicProvider = createAnthropic({
+            apiKey: botConfig.api_key,
+          });
+          model = anthropicProvider(botConfig.model_id);
+          console.log("[generateBotResponse] ✓ Anthropic model initialized");
+          break;
+        }
+
         default: {
-          const error = `Unsupported model provider: ${botConfig.model_provider}`;
+          const error = `Unsupported model provider: ${provider}`;
           console.error(`[generateBotResponse] ERROR STEP 4: ${error}`);
           return { success: false, error };
         }
@@ -779,6 +845,247 @@ export const generateBotResponse = action({
     return {
       success: true,
       content: botResponseText,
+      model: botConfig.model_id,
+      provider: botConfig.model_provider,
+    };
+  },
+});
+
+/**
+ * Streaming AI response generator for public widget.
+ * Writes incremental deltas into a single bot message so the widget can "stream" via subscriptions.
+ */
+export const generateBotResponseStream = action({
+  args: {
+    botId: v.id("botProfiles"),
+    conversationId: v.id("conversations"),
+    userMessage: v.string(),
+    integration: v.optional(v.string()),
+  },
+  handler: async (
+    ctx,
+    args,
+  ): Promise<{
+    success: boolean;
+    content?: string;
+    model?: string;
+    provider?: string;
+    error?: string;
+  }> => {
+    const { botId, conversationId, userMessage, integration = "widget" } = args;
+
+    const startTime = Date.now();
+    let knowledgeChunksCount = 0;
+
+    const botConfig: any = await ctx.runQuery(
+      internal.configuration.getBotConfigByBotId,
+      { botId },
+    );
+
+    if (!botConfig) {
+      return { success: false, error: "Bot configuration not found" };
+    }
+
+    if (!botConfig.model_provider || !botConfig.model_id) {
+      return {
+        success: false,
+        error:
+          "Model provider and model ID must be configured before generating responses",
+      };
+    }
+
+    if (!botConfig.api_key) {
+      return {
+        success: false,
+        error: `API key is not configured for ${botConfig.model_provider}`,
+      };
+    }
+
+    // Load conversation history
+    let allMessages: Doc<"messages">[] = [];
+    if (integration === "playground") {
+      allMessages = await ctx.runQuery(api.playground.getPlaygroundMessages, {
+        sessionId: conversationId,
+      });
+    } else if (integration === "emulator") {
+      allMessages = await ctx.runQuery(api.playground.getEmulatorMessages, {
+        sessionId: conversationId,
+      });
+    } else {
+      allMessages = await ctx.runQuery(internal.ai.getConversationMessages, {
+        conversationId,
+      });
+    }
+
+    const messageHistory = (allMessages || []).map((msg: Doc<"messages">) => ({
+      role:
+        msg.role === "bot" ? "assistant" : (msg.role as "user" | "assistant"),
+      content: msg.content,
+    }));
+
+    // RAG
+    let contextBlock = "";
+    try {
+      const identity = await ctx.auth.getUserIdentity();
+      const { contextBlock: retrievedContext, knowledgeChunksCount: count } =
+        await retrieveRagContext({
+          ctx,
+          botId,
+          conversationId,
+          userMessage,
+          botConfig,
+          userIdForLogging: identity?.subject,
+        });
+      contextBlock = retrievedContext;
+      knowledgeChunksCount = count;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      console.warn(
+        `[generateBotResponseStream] RAG retrieval failed (continuing without context): ${errorMessage}`,
+      );
+    }
+
+    const baseSystemPrompt =
+      botConfig.system_prompt || "You are a helpful assistant.";
+    const systemPrompt = contextBlock
+      ? `${baseSystemPrompt}\n\nRelevant Knowledge Base Information:\n-----------------------------------\n${contextBlock}\n-----------------------------------\nUse the information above to answer the user's question if relevant.`
+      : baseSystemPrompt;
+    const escalationPrompt = buildEscalationPrompt(botConfig.escalation);
+    const finalSystemPrompt = escalationPrompt
+      ? `${systemPrompt}\n\n${escalationPrompt}`
+      : systemPrompt;
+
+    // Provider/model init
+    const provider = normalizeModelProvider(botConfig.model_provider);
+    if (!provider) {
+      return {
+        success: false,
+        error: `Unsupported model provider: ${botConfig.model_provider}`,
+      };
+    }
+
+    let model;
+    try {
+      switch (provider) {
+        case "Groq": {
+          const { createGroq } = await import("@ai-sdk/groq");
+          model = createGroq({ apiKey: botConfig.api_key })(botConfig.model_id);
+          break;
+        }
+        case "OpenAI": {
+          const { createOpenAI } = await import("@ai-sdk/openai");
+          model = createOpenAI({ apiKey: botConfig.api_key })(
+            botConfig.model_id,
+          );
+          break;
+        }
+        case "Google AI": {
+          const { createGoogleGenerativeAI } = await import("@ai-sdk/google");
+          model = createGoogleGenerativeAI({ apiKey: botConfig.api_key })(
+            botConfig.model_id,
+          );
+          break;
+        }
+        case "Anthropic": {
+          const { createAnthropic } = await import("@ai-sdk/anthropic");
+          model = createAnthropic({ apiKey: botConfig.api_key })(
+            botConfig.model_id,
+          );
+          break;
+        }
+      }
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      return {
+        success: false,
+        error: `Failed to initialize AI model: ${errorMessage}`,
+      };
+    }
+
+    // Create placeholder bot message for widget streaming
+    const messageId = await ctx.runMutation(
+      internal.ai.createStreamingBotMessage,
+      {
+        conversationId,
+      },
+    );
+
+    let fullResponseText = "";
+    try {
+      const { textStream } = await streamText({
+        model,
+        system: finalSystemPrompt,
+        messages: [
+          ...messageHistory,
+          { role: "user" as const, content: userMessage },
+        ],
+        temperature: botConfig.temperature ?? 0.7,
+      });
+
+      for await (const delta of textStream as AsyncIterable<string>) {
+        fullResponseText += delta;
+        await ctx.runMutation(internal.ai.updateStreamingBotMessage, {
+          messageId,
+          content: fullResponseText,
+        });
+      }
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+
+      const executionTimeMs = Date.now() - startTime;
+      try {
+        await ctx.runMutation(internal.ai.logAIResponse, {
+          botId,
+          conversationId,
+          userMessage,
+          botResponse: "",
+          model: botConfig.model_id,
+          provider: botConfig.model_provider,
+          temperature: botConfig.temperature ?? 0.7,
+          executionTimeMs,
+          knowledgeChunksRetrieved: knowledgeChunksCount,
+          contextUsed: contextBlock,
+          success: false,
+          errorMessage,
+          integration,
+        });
+      } catch {
+        // ignore
+      }
+
+      return {
+        success: false,
+        error: `Failed to stream response: ${errorMessage}`,
+      };
+    }
+
+    // Metrics
+    const executionTimeMs = Date.now() - startTime;
+    try {
+      await ctx.runMutation(internal.ai.logAIResponse, {
+        botId,
+        conversationId,
+        userMessage,
+        botResponse: fullResponseText,
+        model: botConfig.model_id,
+        provider: botConfig.model_provider,
+        temperature: botConfig.temperature ?? 0.7,
+        executionTimeMs,
+        knowledgeChunksRetrieved: knowledgeChunksCount,
+        contextUsed: contextBlock,
+        success: true,
+        integration,
+      });
+    } catch {
+      // ignore
+    }
+
+    return {
+      success: true,
+      content: fullResponseText,
       model: botConfig.model_id,
       provider: botConfig.model_provider,
     };

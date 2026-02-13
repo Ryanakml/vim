@@ -51,7 +51,7 @@ function WidgetContent() {
   const trackEventMutation = useMutation(api.public.trackEvent);
 
   // Generate AI reply (this is an ACTION, not a mutation)
-  const generateReplyAction = useAction(api.public.generateReply);
+  const generateReplyAction = useAction(api.public.generateReplyStream);
 
   // Subscribe to messages — skip when no session
   const sessionMessages = useQuery(
@@ -145,8 +145,8 @@ function WidgetContent() {
           content,
         });
 
-        // Trigger AI response generation
-        console.log("[Widget] Generating AI response...");
+        // Trigger AI response generation (streamed via DB updates)
+        console.log("[Widget] Generating AI response (streaming)...");
         await generateReplyAction({
           sessionId: currentSession.id,
           organizationId: currentSession.organizationId,
@@ -155,7 +155,7 @@ function WidgetContent() {
           userMessage: content,
         });
 
-        console.log("[Widget] AI response generated and saved");
+        console.log("[Widget] AI response streamed and saved");
       } catch (err) {
         const errorMessage = (err as Error).message;
         console.error(
@@ -189,12 +189,13 @@ function WidgetContent() {
    * A new session will be lazily created on the next message send
    */
   const handleRefresh = useCallback(async () => {
-    if (session && orgId && botId) {
+    if (session && orgId && botId && visitorId) {
       try {
         await endSessionMutation({
           sessionId: session.id,
           organizationId: orgId,
           botId,
+          visitorId,
         });
       } catch (err) {
         console.warn("[Widget] Failed to end session:", err);
@@ -207,7 +208,7 @@ function WidgetContent() {
     setMessages([]);
     setError(null);
     setIsStreaming(false);
-  }, [session, orgId, botId, endSessionMutation]);
+  }, [session, orgId, botId, visitorId, endSessionMutation]);
 
   const handleLeadClick = useCallback(
     async (payload: LeadClickPayload) => {

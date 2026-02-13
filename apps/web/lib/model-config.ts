@@ -1,5 +1,7 @@
+import type { ModelProviderKey } from "@workspace/backend/convex/modelproviders";
+
 export type ModelId =
-  | "gemini-2.5-pro"
+  | "gemini-2.5-flash"
   | "gpt-4o"
   | "claude-3-5-sonnet-latest"
   | "llama-3.3-70b-versatile"
@@ -10,17 +12,17 @@ export type ModelId =
 export const MODEL_CONFIG: Record<
   ModelId,
   {
-    provider: string;
+    provider: ModelProviderKey;
     placeholder: string;
     link: string;
     label: string;
   }
 > = {
-  "gemini-2.5-pro": {
+  "gemini-2.5-flash": {
     provider: "Google AI",
     placeholder: "AIzaSy........................",
     link: "https://aistudio.google.com/app/api-keys",
-    label: "Gemini 2.5 Pro",
+    label: "Gemini 2.5 Flash",
   },
   "gpt-4o": {
     provider: "OpenAI",

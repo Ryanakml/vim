@@ -147,7 +147,7 @@ export default defineSchema({
     .index("by_source_type", ["botId", "source_type"])
     .vectorIndex("by_embedding", {
       vectorField: "embedding",
-      dimensions: 768,
+      dimensions: 3072,
       filterFields: ["botId"],
     }),
 

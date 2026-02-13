@@ -138,7 +138,7 @@ export function DynamicInspector({
   const [isEscalationSaving, setIsEscalationSaving] = useState(false);
 
   // ===== MODEL CONFIG STATE =====
-  const [tempModelId, setTempModelId] = useState<ModelId>("gemini-2.5-pro");
+  const [tempModelId, setTempModelId] = useState<ModelId>("gemini-2.5-flash");
   const [tempApiKey, setTempApiKey] = useState("");
   const [showApiKey, setShowApiKey] = useState(false);
   const [isModelSaving, setIsModelSaving] = useState(false);
@@ -201,7 +201,7 @@ export function DynamicInspector({
       typeof modelId === "string" &&
       Object.prototype.hasOwnProperty.call(MODEL_CONFIG, modelId)
         ? (modelId as ModelId)
-        : ("gemini-2.5-pro" as ModelId);
+        : ("gemini-2.5-flash" as ModelId);
 
     setTempModelId(incomingModelId);
     setTempApiKey(apiKey || "");
@@ -412,7 +412,7 @@ export function DynamicInspector({
       });
 
       onModelConfigDeleted?.();
-      setTempModelId("gemini-2.5-pro");
+      setTempModelId("gemini-2.5-flash");
       setTempApiKey("");
       setShowApiKey(false);
 

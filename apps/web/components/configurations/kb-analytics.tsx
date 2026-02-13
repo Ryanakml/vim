@@ -38,7 +38,7 @@ export function KBAnalytics({ botId, days = 7 }: KBAnalyticsProps) {
   const docTitleMap = useMemo(() => {
     if (!documents) return new Map<string, string>();
     return new Map(
-      documents.map((doc) => [
+      documents.map((doc: any) => [
         String(doc.id),
         extractTitleFromContent(doc.text || "Untitled"),
       ]),
@@ -114,7 +114,7 @@ export function KBAnalytics({ botId, days = 7 }: KBAnalyticsProps) {
               </p>
             ) : (
               <ul className="space-y-2 text-xs text-muted-foreground">
-                {stats.topDocuments.map((doc) => (
+                {stats.topDocuments.map((doc: any) => (
                   <li key={doc.documentId} className="flex justify-between">
                     <span className="text-zinc-200">
                       {docTitleMap.get(doc.documentId) || "Untitled document"}

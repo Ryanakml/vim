@@ -123,21 +123,6 @@ export function ChatMessages({
             </div>
           )}
 
-          {/* Loading indicator during streaming without content */}
-          {isStreaming && !streamingContent && (
-            <div className="flex justify-start">
-              <div
-                className="px-4 py-2.5 rounded-2xl rounded-tl-sm"
-                style={{
-                  backgroundColor:
-                    themeMode === "light" ? "#FFFFFF" : "#27272A",
-                }}
-              >
-                <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
-              </div>
-            </div>
-          )}
-
           {/* Error display */}
           {error && (
             <div className="flex justify-start">

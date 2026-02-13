@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { anyApi } from "convex/server";
+import { api } from "../../convex/_generated/api.js";
 import {
   DEFAULT_ORGANIZATION_ID,
   DEFAULT_USER_ID,
@@ -29,7 +29,7 @@ describe("public widget session lifecycle", () => {
       apiKey: "test-api-key",
     });
 
-    const session = await client.mutation(anyApi.public.createSession, {
+    const session = await client.mutation(api.public.createSession, {
       organizationId: DEFAULT_ORGANIZATION_ID,
       botId: botId as any,
     });
@@ -40,7 +40,7 @@ describe("public widget session lifecycle", () => {
 
     const userMessage = "Hello";
 
-    await client.mutation(anyApi.public.sendMessage, {
+    await client.mutation(api.public.sendMessage, {
       sessionId: session.sessionId,
       organizationId: DEFAULT_ORGANIZATION_ID,
       botId: botId as any,
@@ -48,7 +48,7 @@ describe("public widget session lifecycle", () => {
       content: userMessage,
     });
 
-    const reply = await client.action(anyApi.public.generateReply, {
+    const reply = await client.action(api.public.generateReply, {
       sessionId: session.sessionId,
       organizationId: DEFAULT_ORGANIZATION_ID,
       botId: botId as any,
@@ -59,7 +59,7 @@ describe("public widget session lifecycle", () => {
     expect(reply.success).toBe(true);
     expect(reply.content).toBeTruthy();
 
-    const messages = await client.query(anyApi.public.getMessages, {
+    const messages = await client.query(api.public.getMessages, {
       sessionId: session.sessionId,
       organizationId: DEFAULT_ORGANIZATION_ID,
       botId: botId as any,
@@ -70,32 +70,30 @@ describe("public widget session lifecycle", () => {
     expect(roles).toContain("user");
     expect(roles).toContain("bot");
 
-    const endResult = await client.mutation(anyApi.public.endSession, {
+    const endResult = await client.mutation(api.public.endSession, {
       sessionId: session.sessionId,
       organizationId: DEFAULT_ORGANIZATION_ID,
       botId: botId as any,
+      visitorId: session.visitorId,
     });
 
     expect(endResult.success).toBe(true);
 
-    const publicSession = await client.query(anyApi.testing.getPublicSession, {
+    const publicSession = await client.query(api.testing.getPublicSession, {
       sessionId: session.sessionId,
     });
 
     expect(publicSession?.status).toBe("ended");
 
-    const conversation = await client.query(anyApi.testing.getConversation, {
+    const conversation = await client.query(api.testing.getConversation, {
       conversationId: session.conversationId as any,
     });
 
     expect(conversation?.status).toBe("closed");
 
-    const aiLogs = await client.query(
-      anyApi.testing.getAiLogsForConversation,
-      {
-        conversationId: session.conversationId as any,
-      },
-    );
+    const aiLogs = await client.query(api.testing.getAiLogsForConversation, {
+      conversationId: session.conversationId as any,
+    });
 
     expect(aiLogs.length).toBeGreaterThanOrEqual(1);
   });
