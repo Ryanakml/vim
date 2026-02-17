@@ -9,7 +9,10 @@
     "start": "next start",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "jest --watch",
+    "test:once": "jest",
+    "test:coverage": "jest --coverage"
   },
   "dependencies": {
     "@ai-sdk/google": "^3.0.18",
@@ -33,7 +36,8 @@
     "react-textarea-autosize": "^8.5.3",
     "recharts": "^3.7.0",
     "remark-gfm": "^4.0.1",
-    "sonner": "^2.0.7"
+    "sonner": "^2.0.7",
+    "zod": "^3.25.76"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.1.17",
