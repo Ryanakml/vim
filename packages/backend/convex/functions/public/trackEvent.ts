@@ -1,6 +1,10 @@
 import { v } from "convex/values";
 import { mutation } from "../../_generated/server.js";
-import { api } from "../../_generated/api.js";
+import {
+  assertConversationOwnedByVisitorSession,
+  requireValidVisitorSession,
+  logAudit,
+} from "../../lib/security.js";
 import { Doc, Id } from "../../_generated/dataModel.js";
 
 /**
@@ -10,10 +14,8 @@ import { Doc, Id } from "../../_generated/dataModel.js";
  */
 export const trackEvent = mutation({
   args: {
-    sessionId: v.string(),
-    organizationId: v.string(),
-    botId: v.string(),
-    visitorId: v.string(),
+    conversationId: v.string(),
+    sessionToken: v.string(),
     eventType: v.union(
       v.literal("lead_whatsapp_click"),
       v.literal("lead_email_click"),
@@ -21,41 +23,82 @@ export const trackEvent = mutation({
     href: v.string(),
   },
   handler: async (ctx, args) => {
-    const { sessionId, organizationId, botId, visitorId, eventType, href } =
-      args;
+    const {
+      conversationId: conversationIdString,
+      sessionToken,
+      eventType,
+      href,
+    } = args;
 
-    const session: {
-      _id: string;
-      conversationId: string;
-      organizationId: string;
-      botId: string;
-      visitorId: string;
-    } | null = await ctx.runQuery(api.public.getSessionDetails, {
-      sessionId,
-      organizationId,
-      botId,
-      visitorId,
-    });
-
-    if (!session) {
-      throw new Error(
-        "Session validation failed - session not found or invalid",
-      );
-    }
-
-    const conversation: Doc<"conversations"> | null = await ctx.db.get(
-      session.conversationId as Id<"conversations">,
+    const conversationId = ctx.db.normalizeId(
+      "conversations",
+      conversationIdString,
     );
-    if (!conversation) {
+    if (!conversationId) {
+      await logAudit(ctx, {
+        user_id: "unauthenticated",
+        action: "track_business_event",
+        resource_type: "conversation",
+        resource_id: conversationIdString,
+        status: "error",
+        error_message: "Conversation not found",
+      });
       throw new Error("Conversation not found");
     }
 
-    if (String(conversation.bot_id) !== botId) {
-      throw new Error("Conversation does not belong to this bot");
+    const conversation: Doc<"conversations"> | null = await ctx.db.get(
+      conversationId as Id<"conversations">,
+    );
+    if (!conversation) {
+      await logAudit(ctx, {
+        user_id: "unauthenticated",
+        action: "track_business_event",
+        resource_type: "conversation",
+        resource_id: String(conversationId),
+        status: "error",
+        error_message: "Conversation not found",
+      });
+      throw new Error("Conversation not found");
     }
 
+    const session = await requireValidVisitorSession(ctx, {
+      sessionToken,
+      now: Date.now(),
+    });
+
+    await assertConversationOwnedByVisitorSession(ctx, {
+      conversation,
+      session,
+    });
+
+    const auditUserId = `visitor:${session.visitor_id}`;
+
     if (conversation.integration !== "embed") {
+      await logAudit(ctx, {
+        user_id: auditUserId,
+        organization_id: conversation.organization_id,
+        action: "track_business_event",
+        resource_type: "conversation",
+        resource_id: String(conversation._id),
+        status: "success",
+        changes: {
+          before: null,
+          after: { skipped: true, reason: "not_embed" },
+        },
+      });
       return { success: true, skipped: true, reason: "not_embed" };
+    }
+
+    if (!conversation.organization_id) {
+      await logAudit(ctx, {
+        user_id: auditUserId,
+        action: "track_business_event",
+        resource_type: "conversation",
+        resource_id: String(conversation._id),
+        status: "error",
+        error_message: "Organization not found",
+      });
+      throw new Error("Organization not found");
     }
 
     const now = Date.now();
@@ -68,18 +111,43 @@ export const trackEvent = mutation({
       .first();
 
     if (existing) {
+      await logAudit(ctx, {
+        user_id: auditUserId,
+        organization_id: conversation.organization_id,
+        action: "track_business_event",
+        resource_type: "businessEvent",
+        resource_id: String(existing._id),
+        status: "success",
+        changes: {
+          before: { dedupeKey },
+          after: { deduped: true },
+        },
+      });
       return { success: true, deduped: true };
     }
 
-    await ctx.db.insert("businessEvents", {
-      organizationId: conversation.organization_id || session.organizationId,
+    const eventId = await ctx.db.insert("businessEvents", {
+      organizationId: conversation.organization_id,
       botId: conversation.bot_id,
       conversationId: conversation._id,
-      visitorId: conversation.visitor_id || session.visitorId,
+      visitorId: session.visitor_id,
       eventType,
       href,
       createdAt: now,
       dedupeKey,
+    });
+
+    await logAudit(ctx, {
+      user_id: auditUserId,
+      organization_id: conversation.organization_id,
+      action: "track_business_event",
+      resource_type: "businessEvent",
+      resource_id: String(eventId),
+      status: "success",
+      changes: {
+        before: null,
+        after: { eventType, href },
+      },
     });
 
     return { success: true, deduped: false };

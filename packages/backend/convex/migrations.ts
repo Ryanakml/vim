@@ -1,4 +1,5 @@
 import { mutation } from "./_generated/server.js";
+import { logAudit } from "./lib/security.js";
 
 /**
  * MIGRATION SUITE FOR COMPLETE MULTI-TENANCY ISOLATION
@@ -43,6 +44,17 @@ export const migrateUserIdForBotProfiles = mutation({
         console.error(`Failed to process botProfile ${profile._id}:`, error);
       }
     }
+
+    await logAudit(ctx, {
+      user_id: "system:migration",
+      action: "migrate_user_id_bot_profiles",
+      resource_type: "migration",
+      status: "success",
+      changes: {
+        before: null,
+        after: { deletedCount, skippedCount, errorCount },
+      },
+    });
 
     return {
       success: true,
@@ -113,6 +125,22 @@ export const migrateUserIdForConversationsAndMessages = mutation({
       }
     }
 
+    await logAudit(ctx, {
+      user_id: "system:migration",
+      action: "migrate_user_id_conversations_messages",
+      resource_type: "migration",
+      status: "success",
+      changes: {
+        before: null,
+        after: {
+          conversationsUpdated,
+          conversationsDeleted,
+          messagesUpdated,
+          errorCount,
+        },
+      },
+    });
+
     return {
       success: true,
       message: `Conversations: Updated ${conversationsUpdated}, Deleted ${conversationsDeleted} | Messages: Updated ${messagesUpdated} | Errors ${errorCount}`,
@@ -166,6 +194,17 @@ export const migrateUserIdForDocuments = mutation({
         console.error(`Failed to process document ${doc._id}:`, error);
       }
     }
+
+    await logAudit(ctx, {
+      user_id: "system:migration",
+      action: "migrate_user_id_documents",
+      resource_type: "migration",
+      status: "success",
+      changes: {
+        before: null,
+        after: { updatedCount, deletedCount, errorCount },
+      },
+    });
 
     return {
       success: true,
@@ -222,6 +261,17 @@ export const migrateDocumentsSourceMetadata = mutation({
       }
     }
 
+    await logAudit(ctx, {
+      user_id: "system:migration",
+      action: "migrate_documents_source_metadata",
+      resource_type: "migration",
+      status: "success",
+      changes: {
+        before: null,
+        after: { updatedCount, skippedCount, errorCount },
+      },
+    });
+
     return {
       success: true,
       message: `Documents: Updated ${updatedCount}, Skipped ${skippedCount}, Errors ${errorCount}`,
@@ -274,6 +324,17 @@ export const migrateUserIdForAiLogs = mutation({
         console.error(`Failed to process aiLog ${log._id}:`, error);
       }
     }
+
+    await logAudit(ctx, {
+      user_id: "system:migration",
+      action: "migrate_user_id_ai_logs",
+      resource_type: "migration",
+      status: "success",
+      changes: {
+        before: null,
+        after: { updatedCount, deletedCount, errorCount },
+      },
+    });
 
     return {
       success: true,
@@ -355,6 +416,17 @@ export const addVisitorSupport = mutation({
         `Total records updated: ${conversationsUpdated + messagesUpdated}\n`,
       );
 
+      await logAudit(ctx, {
+        user_id: "system:migration",
+        action: "add_visitor_support",
+        resource_type: "migration",
+        status: "success",
+        changes: {
+          before: null,
+          after: { conversationsUpdated, messagesUpdated },
+        },
+      });
+
       return {
         success: true,
         conversationsUpdated,
@@ -363,6 +435,17 @@ export const addVisitorSupport = mutation({
       };
     } catch (error) {
       console.error("❌ Migration failed:", error);
+
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      await logAudit(ctx, {
+        user_id: "system:migration",
+        action: "add_visitor_support",
+        resource_type: "migration",
+        status: "error",
+        error_message: errorMessage,
+      });
+
       return {
         success: false,
         error: String(error),

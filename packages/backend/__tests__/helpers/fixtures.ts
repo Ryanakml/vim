@@ -1,6 +1,6 @@
 import { ConvexHttpClient } from "convex/browser";
-import { anyApi } from "convex/server";
 import type { Id } from "../../convex/_generated/dataModel.js";
+import { api } from "../../convex/_generated/api.js";
 
 type EscalationConfig = {
   enabled: boolean;
@@ -119,7 +119,7 @@ export async function resetTestData(
   organizationId = DEFAULT_ORGANIZATION_ID,
   client: ConvexHttpClient = getTestClient(),
 ) {
-  return await client.mutation(anyApi.testing.resetTestData, {
+  return await client.mutation(api.testing.resetTestData, {
     organizationId,
   });
 }
@@ -142,7 +142,7 @@ export async function seedBotProfile(
   });
 
   return (await client.mutation(
-    anyApi.testing.insertBotProfile,
+    api.testing.insertBotProfile,
     args,
   )) as Id<"botProfiles">;
 }
@@ -166,7 +166,7 @@ export async function seedConversation(
   });
 
   return (await client.mutation(
-    anyApi.testing.insertConversation,
+    api.testing.insertConversation,
     args,
   )) as Id<"conversations">;
 }
@@ -186,7 +186,7 @@ export async function seedMessage(
   });
 
   return (await client.mutation(
-    anyApi.testing.insertMessage,
+    api.testing.insertMessage,
     args,
   )) as Id<"messages">;
 }
@@ -205,7 +205,7 @@ export async function seedKnowledge(
   });
 
   return (await client.mutation(
-    anyApi.testing.insertDocument,
+    api.testing.insertDocument,
     args,
   )) as Id<"documents">;
 }
@@ -225,7 +225,7 @@ export async function seedPublicSession(
   });
 
   return (await client.mutation(
-    anyApi.testing.insertPublicSession,
+    api.testing.insertPublicSession,
     args,
   )) as Id<"publicSessions">;
 }

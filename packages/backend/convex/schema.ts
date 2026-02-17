@@ -32,6 +32,9 @@ export default defineSchema({
     model_provider: v.optional(v.union(v.string(), v.null())),
     model_id: v.optional(v.union(v.string(), v.null())),
     api_key: v.optional(v.union(v.string(), v.null())),
+    // NOTE: Foundation for secret-safe storage (do not return to clients)
+    // Keep `api_key` for backward compatibility during migration.
+    _encrypted_api_key: v.optional(v.string()),
     system_prompt: v.optional(v.string()),
     temperature: v.optional(v.number()),
     max_tokens: v.optional(v.number()),
@@ -169,6 +172,7 @@ export default defineSchema({
   aiLogs: defineTable({
     // ✅ Multi-tenancy: Isolate logs by bot owner
     user_id: v.optional(v.string()), // Clerk user ID (bot owner)
+    organization_id: v.optional(v.string()), // Clerk organization ID (if org member)
 
     botId: v.id("botProfiles"),
     conversationId: v.id("conversations"),
@@ -183,6 +187,16 @@ export default defineSchema({
     success: v.boolean(),
     errorMessage: v.optional(v.string()),
     integration: v.string(), // "playground", "emulator", etc.
+
+    // --- NEW: Tool Calls & Token Usage (Production Debugging/Billing) ---
+    // Store raw tool calls emitted by the model (AI SDK steps[].toolCalls)
+    toolCalls: v.optional(v.array(v.any())),
+
+    // Token accounting (if provider returns usage)
+    promptTokens: v.optional(v.number()),
+    completionTokens: v.optional(v.number()),
+    totalTokens: v.optional(v.number()),
+
     createdAt: v.number(),
   })
     .index("by_botId", ["botId"])
@@ -238,4 +252,108 @@ export default defineSchema({
     .index("by_bot_createdAt", ["botId", "createdAt"])
     .index("by_org_createdAt", ["organizationId", "createdAt"])
     .index("by_dedupeKey", ["dedupeKey"]),
+
+  // === Security Foundations (Multi-tenant hardening) ===
+
+  /**
+   * Gap #1: Visitor Session Validation
+   * Token-based visitor sessions scoped to (visitor_id, bot_id) with TTL.
+   */
+  visitorSessions: defineTable({
+    visitor_id: v.string(),
+    bot_id: v.id("botProfiles"),
+    session_token: v.string(),
+    created_at: v.number(),
+    expires_at: v.number(),
+    revoked: v.optional(v.boolean()),
+    revoked_at: v.optional(v.number()),
+    ip_address: v.optional(v.string()),
+    user_agent_hash: v.optional(v.string()),
+  })
+    .index("by_token", ["session_token"])
+    .index("by_visitor_bot", ["visitor_id", "bot_id"])
+    .index("by_bot", ["bot_id"])
+    .index("by_expires", ["expires_at"]),
+
+  /**
+   * Gap #3: Organization-level Isolation
+   * Explicit org membership table for role-based access checks.
+   */
+  orgMembers: defineTable({
+    organization_id: v.string(),
+    user_id: v.string(),
+    role: v.union(
+      v.literal("owner"),
+      v.literal("admin"),
+      v.literal("member"),
+      v.literal("viewer"),
+    ),
+    joined_at: v.number(),
+    invited_by: v.optional(v.string()),
+    disabled: v.optional(v.boolean()),
+    disabled_at: v.optional(v.number()),
+  })
+    .index("by_org", ["organization_id"])
+    .index("by_user", ["user_id"])
+    .index("by_org_user", ["organization_id", "user_id"]),
+
+  /**
+   * Gap #4: Missing Audit Trail Logging
+   * Central audit log table for sensitive access and mutations.
+   */
+  auditLogs: defineTable({
+    user_id: v.string(),
+    organization_id: v.optional(v.string()),
+
+    action: v.string(),
+    resource_type: v.string(),
+    resource_id: v.optional(v.string()),
+
+    changes: v.optional(
+      v.object({
+        before: v.any(),
+        after: v.any(),
+      }),
+    ),
+
+    status: v.union(
+      v.literal("success"),
+      v.literal("denied"),
+      v.literal("error"),
+    ),
+    error_message: v.optional(v.string()),
+
+    ip_address: v.optional(v.string()),
+    user_agent: v.optional(v.string()),
+    timestamp: v.number(),
+  })
+    .index("by_user", ["user_id"])
+    .index("by_org", ["organization_id"])
+    .index("by_resource", ["resource_type", "resource_id"])
+    .index("by_timestamp", ["timestamp"]),
+
+  /**
+   * Gap #5: Widget Embedding Security
+   * Domain-scoped embed tokens to avoid bot enumeration and enforce allowlisting.
+   */
+  embedTokens: defineTable({
+    bot_id: v.id("botProfiles"),
+    user_id: v.string(),
+    organization_id: v.optional(v.string()),
+
+    token: v.string(),
+    domain_hash: v.string(),
+    domain: v.optional(v.string()),
+
+    created_at: v.number(),
+    expires_at: v.number(),
+    revoked: v.boolean(),
+    revoked_at: v.optional(v.number()),
+
+    requests_today: v.number(),
+    last_request: v.optional(v.number()),
+  })
+    .index("by_token", ["token"])
+    .index("by_bot", ["bot_id"])
+    .index("by_user", ["user_id"]),
 });

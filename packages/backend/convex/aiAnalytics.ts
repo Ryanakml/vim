@@ -62,10 +62,29 @@ export const getAIMetrics = query({
 
     const modelsUsed = [...new Set(logs.map((l) => l.model))];
 
-    const totalTokensGenerated = logs.reduce(
-      (sum, l) => sum + l.botResponse.split(/\s+/).length,
-      0,
-    );
+    const totalTokensGenerated = logs.reduce((sum, l) => {
+      const anyLog = l as any;
+      if (typeof anyLog.totalTokens === "number")
+        return sum + anyLog.totalTokens;
+      if (
+        typeof anyLog.promptTokens === "number" &&
+        typeof anyLog.completionTokens === "number"
+      ) {
+        return sum + anyLog.promptTokens + anyLog.completionTokens;
+      }
+      // Fallback (legacy logs): estimate tokens from word count
+      return sum + l.botResponse.split(/\s+/).length;
+    }, 0);
+
+    const totalPromptTokens = logs.reduce((sum, l) => {
+      const v = (l as any).promptTokens;
+      return sum + (typeof v === "number" ? v : 0);
+    }, 0);
+
+    const totalCompletionTokens = logs.reduce((sum, l) => {
+      const v = (l as any).completionTokens;
+      return sum + (typeof v === "number" ? v : 0);
+    }, 0);
 
     const totalContextCharacters = logs.reduce(
       (sum, l) => sum + l.contextUsed.length,
@@ -84,6 +103,8 @@ export const getAIMetrics = query({
       avgExecutionTimeMs: Math.round(avgExecutionTimeMs),
       modelsUsed,
       totalTokensGenerated,
+      totalPromptTokens,
+      totalCompletionTokens,
       totalContextCharacters,
       errors: failed.map((f) => ({
         message: f.errorMessage || "Unknown error",
@@ -94,6 +115,85 @@ export const getAIMetrics = query({
       failedResponses: failed.length,
       avgKnowledgeChunksUsed: Math.round(avgKnowledgeChunksUsed * 100) / 100,
     };
+  },
+});
+
+function estimateTokensFromLog(log: any): number {
+  if (typeof log?.totalTokens === "number") return log.totalTokens;
+  if (
+    typeof log?.promptTokens === "number" &&
+    typeof log?.completionTokens === "number"
+  ) {
+    return log.promptTokens + log.completionTokens;
+  }
+  if (typeof log?.botResponse === "string") {
+    return log.botResponse.split(/\s+/).length;
+  }
+  return 0;
+}
+
+/**
+ * Time-series performance data for Overview chart.
+ * Returns buckets with { time, calls, tokens }.
+ */
+export const getAIPerformanceSeries = query({
+  args: {
+    botId: v.id("botProfiles"),
+    days: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthorized: Must be logged in");
+    }
+
+    const userId = identity.subject;
+    const now = Date.now();
+    const start = now - args.days * 24 * 60 * 60 * 1000;
+
+    const logs = await ctx.db
+      .query("aiLogs")
+      .withIndex("by_user_createdAt", (q) =>
+        q.eq("user_id", userId).gte("createdAt", start),
+      )
+      .collect()
+      .then((allLogs) => allLogs.filter((l) => l.botId === args.botId));
+
+    const isHourly = args.days <= 1;
+    const bucketMs = isHourly ? 60 * 60 * 1000 : 24 * 60 * 60 * 1000;
+    const bucketCount = isHourly ? 24 : Math.max(1, Math.floor(args.days));
+    const alignedStart = now - bucketCount * bucketMs;
+
+    const buckets = Array.from({ length: bucketCount }, (_, i) => {
+      const bucketStart = alignedStart + i * bucketMs;
+      const time = isHourly
+        ? new Date(bucketStart).toLocaleTimeString("en-US", { hour: "numeric" })
+        : new Date(bucketStart).toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+          });
+
+      return {
+        bucketStart,
+        time,
+        calls: 0,
+        tokens: 0,
+      };
+    });
+
+    for (const log of logs) {
+      const createdAt = (log as any).createdAt;
+      if (typeof createdAt !== "number") continue;
+      const idx = Math.floor((createdAt - alignedStart) / bucketMs);
+      if (idx < 0 || idx >= buckets.length) continue;
+      const bucket = buckets[idx];
+      if (bucket) {
+        bucket.calls += 1;
+        bucket.tokens += estimateTokensFromLog(log);
+      }
+    }
+
+    return buckets.map(({ time, calls, tokens }) => ({ time, calls, tokens }));
   },
 });
 

@@ -15,8 +15,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <ClerkProvider
       publishableKey={process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
-      // signInUrl="/signin"
-      // signUpUrl="/signup"
+      // Use Clerk's hosted authentication pages
+      // If you want custom pages, set signInUrl="/sign-in" and signUpUrl="/sign-up"
+      // and create corresponding pages with <SignIn /> and <SignUp /> components
       afterSignOutUrl="/"
     >
       <ConvexProviderWithClerk client={convex} useAuth={useAuth}>

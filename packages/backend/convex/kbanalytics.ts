@@ -1,5 +1,6 @@
 import { v } from "convex/values";
 import { internalMutation, query } from "./_generated/server.js";
+import { logAudit } from "./lib/security.js";
 
 export const logKBUsage = internalMutation({
   args: {
@@ -12,18 +13,55 @@ export const logKBUsage = internalMutation({
   handler: async (ctx, args) => {
     if (args.retrievedDocumentIds.length === 0) return;
 
+    const auditUserId = args.user_id ?? "visitor";
+
     const now = Date.now();
-    for (let i = 0; i < args.retrievedDocumentIds.length; i += 1) {
-      const docId = args.retrievedDocumentIds[i];
-      if (!docId) continue;
-      await ctx.db.insert("kb_usage_logs", {
-        user_id: args.user_id,
-        botId: args.botId,
-        conversationId: args.conversationId,
-        documentId: docId,
-        similarity: args.querySimilarities[i] ?? 0,
-        timestamp: now,
+    let inserted = 0;
+    let auditLogged = false;
+
+    try {
+      for (let i = 0; i < args.retrievedDocumentIds.length; i += 1) {
+        const docId = args.retrievedDocumentIds[i];
+        if (!docId) continue;
+        await ctx.db.insert("kb_usage_logs", {
+          user_id: args.user_id,
+          botId: args.botId,
+          conversationId: args.conversationId,
+          documentId: docId,
+          similarity: args.querySimilarities[i] ?? 0,
+          timestamp: now,
+        });
+        inserted += 1;
+      }
+
+      await logAudit(ctx, {
+        user_id: auditUserId,
+        action: "log_kb_usage",
+        resource_type: "kb_usage_logs",
+        status: "success",
+        changes: {
+          before: null,
+          after: {
+            botId: args.botId,
+            conversationId: args.conversationId,
+            inserted,
+          },
+        },
       });
+      auditLogged = true;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      if (!auditLogged) {
+        await logAudit(ctx, {
+          user_id: auditUserId,
+          action: "log_kb_usage",
+          resource_type: "kb_usage_logs",
+          status: "error",
+          error_message: errorMessage,
+        });
+      }
+      throw error;
     }
   },
 });
@@ -62,6 +100,29 @@ export const getKBStats = query({
       )
       .collect();
 
+    // Query-level coverage (successful retrieval vs fallback/no-context)
+    // We derive this from aiLogs, which are logged for every AI call and
+    // contain knowledgeChunksRetrieved (0 when RAG returned nothing).
+    const aiLogs = await ctx.db
+      .query("aiLogs")
+      .withIndex("by_botId_createdAt", (q) =>
+        q.eq("botId", args.botId).gte("createdAt", startTime),
+      )
+      .collect();
+
+    const totalQueries = aiLogs.length;
+    const successfulRetrievalQueries = aiLogs.filter(
+      (log) => log.knowledgeChunksRetrieved > 0,
+    ).length;
+    const fallbackNoContextQueries = totalQueries - successfulRetrievalQueries;
+    const retrievalCoveragePercent =
+      totalQueries > 0
+        ? Math.min(
+            100,
+            Math.round((successfulRetrievalQueries / totalQueries) * 100),
+          )
+        : 0;
+
     const usageMap = new Map<string, { count: number; lastUsedAt: number }>();
     for (const log of usageLogs) {
       const key = String(log.documentId);
@@ -81,23 +142,44 @@ export const getKBStats = query({
       .sort((a, b) => b.count - a.count)
       .slice(0, 5);
 
+    const documentUsage = documents
+      .map((doc) => {
+        const key = String(doc._id);
+        const usage = usageMap.get(key);
+        return {
+          documentId: key,
+          count: usage?.count ?? 0,
+          lastUsedAt: usage?.lastUsedAt ?? 0,
+        };
+      })
+      .sort((a, b) => {
+        if (b.count !== a.count) return b.count - a.count;
+        return b.lastUsedAt - a.lastUsedAt;
+      });
+
     const usedDocumentIds = new Set(usageMap.keys());
     const unusedDocumentIds = documents
       .filter((doc) => !usedDocumentIds.has(String(doc._id)))
       .map((doc) => String(doc._id));
 
     const documentsUsedLastPeriod = usedDocumentIds.size;
-    const hitRate =
-      documents.length > 0
-        ? Math.round((documentsUsedLastPeriod / documents.length) * 100)
-        : 0;
+
+    // Legacy field kept for backwards compatibility.
+    // Previously this could appear >100% due to deleted documents still
+    // present in kb_usage_logs. UI should prefer retrievalCoveragePercent.
+    const hitRate = retrievalCoveragePercent;
 
     return {
       totalDocuments: documents.length,
       documentsUsedLastPeriod,
       totalRetrievals: usageLogs.length,
       hitRate,
+      totalQueries,
+      successfulRetrievalQueries,
+      fallbackNoContextQueries,
+      retrievalCoveragePercent,
       topDocuments,
+      documentUsage,
       unusedDocumentIds,
       windowDays: args.days ?? 7,
     };

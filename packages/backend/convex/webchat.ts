@@ -1,5 +1,7 @@
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server.js";
+import type { Id } from "./_generated/dataModel.js";
+import { logAudit } from "./lib/security.js";
 
 // ===== BOT PROFILES =====
 
@@ -21,7 +23,15 @@ export const getBotProfile = query({
       .collect();
 
     if (profilesWithUserId.length > 0) {
-      return profilesWithUserId[0];
+      const profile = profilesWithUserId[0];
+      if (profile) {
+        const hasApiKey = Boolean(profile.api_key);
+        return {
+          ...profile,
+          api_key: null,
+          has_api_key: hasApiKey,
+        };
+      }
     }
 
     // ⚠️ Fallback: If no profile exists, return null (ensureBotProfile will create one)
@@ -31,10 +41,17 @@ export const getBotProfile = query({
 
 // Create initial profile if doesn't exist
 export const ensureBotProfile = mutation({
-  handler: async (ctx) => {
+  handler: async (ctx): Promise<Id<"botProfiles">> => {
     // ✅ Get authenticated user's identity
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
+      await logAudit(ctx, {
+        user_id: "unauthenticated",
+        action: "ensure_bot_profile",
+        resource_type: "botProfile",
+        status: "denied",
+        error_message: "Unauthorized: Must be logged in",
+      });
       throw new Error("Unauthorized: Must be logged in");
     }
 
@@ -47,33 +64,91 @@ export const ensureBotProfile = mutation({
       .withIndex("by_user_id", (q) => q.eq("user_id", userId))
       .collect();
 
-    if (existing.length > 0) return existing[0];
+    if (existing.length > 0) {
+      const profile = existing[0];
+      if (!profile) {
+        await logAudit(ctx, {
+          user_id: userId,
+          organization_id: organizationId,
+          action: "ensure_bot_profile",
+          resource_type: "botProfile",
+          status: "error",
+          error_message: "Invariant: existing bot profile missing",
+        });
+        throw new Error("Invariant: existing bot profile missing");
+      }
+      await logAudit(ctx, {
+        user_id: userId,
+        organization_id: organizationId,
+        action: "ensure_bot_profile",
+        resource_type: "botProfile",
+        resource_id: String(profile._id),
+        status: "success",
+        changes: {
+          before: { _id: profile._id },
+          after: { _id: profile._id },
+        },
+      });
+      return profile._id;
+    }
 
-    return await ctx.db.insert("botProfiles", {
-      user_id: userId,
-      organization_id: organizationId,
-      avatar_url: "",
-      bot_names: "My Bot",
-      bot_description: "",
-      msg_placeholder: "Type your message...",
-      primary_color: "#3276EA",
-      font: "inter",
-      theme_mode: "light",
-      header_style: "basic",
-      message_style: "filled",
-      corner_radius: 16,
-      enable_feedback: false,
-      enable_file_upload: false,
-      enable_sound: false,
-      history_reset: "never",
-      escalation: {
-        enabled: false,
-        whatsapp: "",
-        email: "",
-      },
-      created_at: Date.now(),
-      updated_at: Date.now(),
-    });
+    let auditLogged = false;
+    try {
+      const id = await ctx.db.insert("botProfiles", {
+        user_id: userId,
+        organization_id: organizationId,
+        avatar_url: "",
+        bot_names: "My Bot",
+        bot_description: "",
+        msg_placeholder: "Type your message...",
+        primary_color: "#3276EA",
+        font: "inter",
+        theme_mode: "light",
+        header_style: "basic",
+        message_style: "filled",
+        corner_radius: 16,
+        enable_feedback: false,
+        enable_file_upload: false,
+        enable_sound: false,
+        history_reset: "never",
+        escalation: {
+          enabled: false,
+          whatsapp: "",
+          email: "",
+        },
+        created_at: Date.now(),
+        updated_at: Date.now(),
+      });
+
+      await logAudit(ctx, {
+        user_id: userId,
+        organization_id: organizationId,
+        action: "create_bot_profile",
+        resource_type: "botProfile",
+        resource_id: String(id),
+        status: "success",
+        changes: {
+          before: null,
+          after: { _id: id },
+        },
+      });
+      auditLogged = true;
+      return id;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      if (!auditLogged) {
+        await logAudit(ctx, {
+          user_id: userId,
+          organization_id: organizationId,
+          action: "create_bot_profile",
+          resource_type: "botProfile",
+          status: "error",
+          error_message: errorMessage,
+        });
+      }
+      throw error;
+    }
   },
 });
 
@@ -100,6 +175,14 @@ export const updateBotProfile = mutation({
     // ✅ Verify user is authenticated
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
+      await logAudit(ctx, {
+        user_id: "unauthenticated",
+        action: "update_bot_profile",
+        resource_type: "botProfile",
+        resource_id: String(args.id),
+        status: "denied",
+        error_message: "Unauthorized: Must be logged in",
+      });
       throw new Error("Unauthorized: Must be logged in");
     }
 
@@ -109,16 +192,68 @@ export const updateBotProfile = mutation({
     // ✅ Verify this profile belongs to the authenticated user
     const profile = await ctx.db.get(id);
     if (!profile) {
+      await logAudit(ctx, {
+        user_id: userId,
+        organization_id: (identity.org_id as string | undefined) || undefined,
+        action: "update_bot_profile",
+        resource_type: "botProfile",
+        resource_id: String(id),
+        status: "error",
+        error_message: "Profile not found",
+      });
       throw new Error("Profile not found");
     }
     if (profile.user_id !== userId) {
+      await logAudit(ctx, {
+        user_id: userId,
+        organization_id: (identity.org_id as string | undefined) || undefined,
+        action: "update_bot_profile",
+        resource_type: "botProfile",
+        resource_id: String(id),
+        status: "denied",
+        error_message: "Unauthorized: Cannot update other user's profile",
+      });
       throw new Error("Unauthorized: Cannot update other user's profile");
     }
 
-    await ctx.db.patch(id, {
+    const before = profile;
+    const patch = {
       ...updates,
       updated_at: Date.now(),
-    });
+    };
+
+    let auditLogged = false;
+    try {
+      await ctx.db.patch(id, patch);
+      await logAudit(ctx, {
+        user_id: userId,
+        organization_id: profile.organization_id,
+        action: "update_bot_profile",
+        resource_type: "botProfile",
+        resource_id: String(id),
+        status: "success",
+        changes: {
+          before,
+          after: { ...before, ...patch },
+        },
+      });
+      auditLogged = true;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      if (!auditLogged) {
+        await logAudit(ctx, {
+          user_id: userId,
+          organization_id: profile.organization_id,
+          action: "update_bot_profile",
+          resource_type: "botProfile",
+          resource_id: String(id),
+          status: "error",
+          error_message: errorMessage,
+        });
+      }
+      throw error;
+    }
   },
 });
 
@@ -134,10 +269,16 @@ export const getBotProfiles = query({
     const userId = identity.subject;
 
     // ✅ Return only current user's profiles
-    return await ctx.db
+    const profiles = await ctx.db
       .query("botProfiles")
       .withIndex("by_user_id", (q) => q.eq("user_id", userId))
       .collect();
+
+    return profiles.map((profile) => ({
+      ...profile,
+      api_key: null,
+      has_api_key: Boolean(profile.api_key),
+    }));
   },
 });
 
@@ -153,36 +294,74 @@ export const updateBotProfiles = mutation({
     // ✅ Get authenticated user's identity
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
+      await logAudit(ctx, {
+        user_id: "unauthenticated",
+        action: "create_bot_profile_legacy",
+        resource_type: "botProfile",
+        status: "denied",
+        error_message: "Unauthorized: Must be logged in",
+      });
       throw new Error("Unauthorized: Must be logged in");
     }
 
     const userId = identity.subject;
     const organizationId = (identity.org_id as string | undefined) || undefined;
 
-    await ctx.db.insert("botProfiles", {
-      user_id: userId,
-      organization_id: organizationId,
-      avatar_url: args.avatar_url,
-      bot_names: args.bot_names,
-      bot_description: args.bot_description,
-      msg_placeholder: args.msg_placeholder,
-      primary_color: "#3276EA",
-      font: "inter",
-      theme_mode: "light",
-      header_style: "basic",
-      message_style: "filled",
-      corner_radius: 16,
-      enable_feedback: false,
-      enable_file_upload: false,
-      enable_sound: false,
-      history_reset: "never",
-      escalation: {
-        enabled: false,
-        whatsapp: "",
-        email: "",
-      },
-      created_at: Date.now(),
-      updated_at: Date.now(),
-    });
+    let auditLogged = false;
+    try {
+      const id = await ctx.db.insert("botProfiles", {
+        user_id: userId,
+        organization_id: organizationId,
+        avatar_url: args.avatar_url,
+        bot_names: args.bot_names,
+        bot_description: args.bot_description,
+        msg_placeholder: args.msg_placeholder,
+        primary_color: "#3276EA",
+        font: "inter",
+        theme_mode: "light",
+        header_style: "basic",
+        message_style: "filled",
+        corner_radius: 16,
+        enable_feedback: false,
+        enable_file_upload: false,
+        enable_sound: false,
+        history_reset: "never",
+        escalation: {
+          enabled: false,
+          whatsapp: "",
+          email: "",
+        },
+        created_at: Date.now(),
+        updated_at: Date.now(),
+      });
+
+      await logAudit(ctx, {
+        user_id: userId,
+        organization_id: organizationId,
+        action: "create_bot_profile_legacy",
+        resource_type: "botProfile",
+        resource_id: String(id),
+        status: "success",
+        changes: {
+          before: null,
+          after: { _id: id },
+        },
+      });
+      auditLogged = true;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      if (!auditLogged) {
+        await logAudit(ctx, {
+          user_id: userId,
+          organization_id: organizationId,
+          action: "create_bot_profile_legacy",
+          resource_type: "botProfile",
+          status: "error",
+          error_message: errorMessage,
+        });
+      }
+      throw error;
+    }
   },
 });

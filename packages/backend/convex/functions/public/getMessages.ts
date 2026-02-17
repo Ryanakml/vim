@@ -17,10 +17,8 @@ import type { Id } from "../../_generated/dataModel.js";
  */
 export const getMessages = query({
   args: {
-    sessionId: v.string(), // v.id("publicSessions")
-    organizationId: v.string(),
-    botId: v.string(),
-    visitorId: v.string(),
+    conversationId: v.string(),
+    sessionToken: v.string(),
   },
   handler: async (
     ctx,
@@ -33,38 +31,21 @@ export const getMessages = query({
       createdAt: number;
     }>
   > => {
-    const session: {
-      _id: Id<"publicSessions">;
-      conversationId: Id<"conversations">;
-      organizationId: string;
-      botId: string;
-      visitorId: string;
-    } | null = await ctx.runQuery(api.public.getSessionDetails, {
-      sessionId: args.sessionId,
-      organizationId: args.organizationId,
-      botId: args.botId,
-      visitorId: args.visitorId,
-    });
-
-    if (!session) {
-      throw new Error(
-        "Session not found or does not match provided organization/bot/visitor",
-      );
-    }
-
-    // ✅ VALIDATION 2: Verify conversation exists
-    const conversation = await ctx.db.get(session.conversationId);
-    if (!conversation) {
+    const conversationId = ctx.db.normalizeId(
+      "conversations",
+      args.conversationId,
+    );
+    if (!conversationId) {
       throw new Error("Conversation not found");
     }
 
-    // ✅ FETCH: All messages in conversation
-    const allMessages = await ctx.db
-      .query("messages")
-      .withIndex("by_conversation", (q) =>
-        q.eq("conversation_id", session.conversationId),
-      )
-      .collect();
+    const allMessages = await ctx.runQuery(
+      api.monitor.getConversationMessages,
+      {
+        conversationId,
+        sessionToken: args.sessionToken,
+      },
+    );
 
     // ✅ RETURN: Formatted messages for widget
     return allMessages.map((msg) => ({

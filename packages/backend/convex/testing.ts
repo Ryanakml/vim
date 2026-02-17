@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server.js";
 import type { Doc, Id, TableNames } from "./_generated/dataModel.js";
+import { logAudit } from "./lib/security.js";
 
 type EscalationConfig = {
   enabled: boolean;
@@ -45,6 +46,8 @@ export const resetTestData = mutation({
   },
   handler: async (ctx, args) => {
     assertTestingEnabled();
+
+    const auditOrgId = args.organizationId;
 
     const matchOrg = (value?: string) =>
       !args.organizationId || value === args.organizationId;
@@ -120,7 +123,7 @@ export const resetTestData = mutation({
     await deleteByIds(ctx, documentIds);
     await deleteByIds(ctx, botIds);
 
-    return {
+    const result = {
       deleted: {
         botProfiles: botIds.length,
         conversations: conversationIds.length,
@@ -132,6 +135,20 @@ export const resetTestData = mutation({
         businessEvents: businessEventIds.length,
       },
     };
+
+    await logAudit(ctx, {
+      user_id: "system:test",
+      organization_id: auditOrgId,
+      action: "reset_test_data",
+      resource_type: "testing",
+      status: "success",
+      changes: {
+        before: null,
+        after: result.deleted,
+      },
+    });
+
+    return result;
   },
 });
 
@@ -225,7 +242,20 @@ export const insertBotProfile = mutation({
       record.embed_token_domain = args.embed_token_domain;
     }
 
-    return await ctx.db.insert("botProfiles", record);
+    const id = await ctx.db.insert("botProfiles", record);
+    await logAudit(ctx, {
+      user_id: args.user_id ?? "system:test",
+      organization_id: args.organization_id,
+      action: "insert_bot_profile_test",
+      resource_type: "botProfile",
+      resource_id: String(id),
+      status: "success",
+      changes: {
+        before: null,
+        after: { _id: id },
+      },
+    });
+    return id;
   },
 });
 
@@ -274,7 +304,20 @@ export const insertConversation = mutation({
       record.visitor_id = args.visitor_id;
     }
 
-    return await ctx.db.insert("conversations", record);
+    const id = await ctx.db.insert("conversations", record);
+    await logAudit(ctx, {
+      user_id: args.user_id ?? "system:test",
+      organization_id: args.organization_id,
+      action: "insert_conversation_test",
+      resource_type: "conversation",
+      resource_id: String(id),
+      status: "success",
+      changes: {
+        before: null,
+        after: { _id: id, bot_id: args.bot_id },
+      },
+    });
+    return id;
   },
 });
 
@@ -308,7 +351,19 @@ export const insertMessage = mutation({
       record.participant_id = args.participant_id;
     }
 
-    return await ctx.db.insert("messages", record);
+    const id = await ctx.db.insert("messages", record);
+    await logAudit(ctx, {
+      user_id: args.user_id ?? "system:test",
+      action: "insert_message_test",
+      resource_type: "message",
+      resource_id: String(id),
+      status: "success",
+      changes: {
+        before: null,
+        after: { _id: id, conversation_id: args.conversation_id },
+      },
+    });
+    return id;
   },
 });
 
@@ -382,7 +437,20 @@ export const insertDocument = mutation({
       record.source_metadata = sourceMetadata;
     }
 
-    return await ctx.db.insert("documents", record);
+    const id = await ctx.db.insert("documents", record);
+    await logAudit(ctx, {
+      user_id: userId ?? "system:test",
+      organization_id: (await ctx.db.get(args.botId))?.organization_id,
+      action: "insert_document_test",
+      resource_type: "document",
+      resource_id: String(id),
+      status: "success",
+      changes: {
+        before: null,
+        after: { _id: id, botId: args.botId },
+      },
+    });
+    return id;
   },
 });
 
@@ -412,7 +480,20 @@ export const insertPublicSession = mutation({
       record.endedAt = args.endedAt;
     }
 
-    return await ctx.db.insert("publicSessions", record);
+    const id = await ctx.db.insert("publicSessions", record);
+    await logAudit(ctx, {
+      user_id: `visitor:${args.visitorId}`,
+      organization_id: args.organizationId,
+      action: "insert_public_session_test",
+      resource_type: "publicSession",
+      resource_id: String(id),
+      status: "success",
+      changes: {
+        before: null,
+        after: { _id: id, conversationId: args.conversationId },
+      },
+    });
+    return id;
   },
 });
 

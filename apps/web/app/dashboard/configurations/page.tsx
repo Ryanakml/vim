@@ -45,7 +45,7 @@ export default function ConfigurationsPage() {
   const [selectedModel, setSelectedModel] =
     useState<ModelId>("gemini-2.5-flash");
   const [, setModelProvider] = useState("");
-  const [apiKey, setApiKey] = useState("");
+  const [hasApiKey, setHasApiKey] = useState(false);
   const [modelProvider, setModelProviderState] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
   const [escalationEnabled, setEscalationEnabled] = useState(false);
@@ -104,9 +104,7 @@ export default function ConfigurationsPage() {
         setModelProvider(botConfig.model_provider);
         setModelProviderState(botConfig.model_provider);
       }
-      if (botConfig.api_key) {
-        setApiKey(botConfig.api_key);
-      }
+      setHasApiKey(Boolean((botConfig as any).has_api_key));
       if (botConfig.system_prompt) {
         setSystemPrompt(botConfig.system_prompt);
       }
@@ -182,7 +180,7 @@ export default function ConfigurationsPage() {
   }
 
   const isLoading = botConfig === undefined;
-  const isConfigured = !!apiKey && !!modelProvider;
+  const isConfigured = hasApiKey && !!modelProvider;
   const selectedDocumentId = selectedComponent?.startsWith("kb_")
     ? selectedComponent.slice(3)
     : null;
@@ -469,7 +467,13 @@ export default function ConfigurationsPage() {
                   onSelectSection={handleSelectKnowledgeBaseSection}
                 />
 
-                <KBAnalytics botId={botProfile?._id} />
+                <KBAnalytics
+                  botId={botProfile?._id}
+                  openDocumentEditor={(docId) => {
+                    setSelectedComponent(`kb_${docId}`);
+                    setSidebarTab("inspector");
+                  }}
+                />
               </TabsContent>
 
               {/* ===== ADVANCED TAB ===== */}
@@ -592,16 +596,16 @@ export default function ConfigurationsPage() {
             setEscalationEmail(next.email);
           }}
           modelId={selectedModel}
-          apiKey={apiKey}
-          onModelConfigChange={({ modelId, modelProvider, apiKey }) => {
+          hasApiKey={hasApiKey}
+          onModelConfigChange={({ modelId, modelProvider, hasApiKey }) => {
             if (Object.prototype.hasOwnProperty.call(MODEL_CONFIG, modelId)) {
               setSelectedModel(modelId as ModelId);
             }
             setModelProviderState(modelProvider);
-            setApiKey(apiKey);
+            setHasApiKey(hasApiKey);
           }}
           onModelConfigDeleted={() => {
-            setApiKey("");
+            setHasApiKey(false);
             setModelProviderState("");
             setSelectedModel("gemini-2.5-flash");
           }}

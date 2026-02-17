@@ -7,6 +7,7 @@
 
 export {
   getBotProfile,
+  validateEmbedToken,
   createSession,
   sendMessage,
   getMessages,

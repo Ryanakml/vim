@@ -20,9 +20,11 @@ import {
 
 function WidgetContent() {
   const searchParams = useSearchParams();
-  const orgId = searchParams.get("orgId");
-  const botId = searchParams.get("botId");
-  const visitorId = searchParams.get("visitorId");
+  const token = searchParams.get("token");
+
+  const [currentDomain, setCurrentDomain] = useState<string | undefined>(
+    undefined,
+  );
 
   const [session, setSession] = useState<ChatSession | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
@@ -32,10 +34,23 @@ function WidgetContent() {
   const [hydratedTheme, setHydratedTheme] = useState<string | null>(null);
   const [isOnline, setIsOnline] = useState(false);
 
+  useEffect(() => {
+    try {
+      if (!document.referrer) {
+        setCurrentDomain(undefined);
+        return;
+      }
+      const hostname = new URL(document.referrer).hostname;
+      setCurrentDomain(hostname || undefined);
+    } catch {
+      setCurrentDomain(undefined);
+    }
+  }, []);
+
   // Fetch bot config
   const config = useQuery(
-    api.public.getBotProfile,
-    orgId && botId ? { organizationId: orgId, botId } : "skip",
+    api.public.validateEmbedToken,
+    token ? { token, currentDomain } : "skip",
   );
 
   // Create session
@@ -58,17 +73,15 @@ function WidgetContent() {
     api.public.getMessages,
     session
       ? {
-          sessionId: session.id,
-          organizationId: orgId || "",
-          botId: botId || "",
-          visitorId: session.visitorId,
+          conversationId: session.conversationId,
+          sessionToken: session.sessionToken,
         }
       : "skip",
   );
 
   // Validate parameters and load bot config
   useEffect(() => {
-    if (!orgId || !botId || !visitorId) {
+    if (!token) {
       setError(new Error("Missing required parameters"));
       notifyError("Missing required parameters");
       setIsOnline(false);
@@ -91,7 +104,7 @@ function WidgetContent() {
         botConfigData.appearance.cornerRadius,
       );
     }
-  }, [orgId, botId, visitorId, config, hydratedTheme]);
+  }, [token, config, hydratedTheme]);
 
   // Sync messages from subscription
   useEffect(() => {
@@ -102,7 +115,7 @@ function WidgetContent() {
 
   const handleSendMessage = useCallback(
     async (content: string) => {
-      if (!orgId || !botId || !visitorId) {
+      if (!token) {
         setError(new Error("Missing required parameters"));
         return;
       }
@@ -114,22 +127,21 @@ function WidgetContent() {
         let currentSession = session;
         if (!currentSession) {
           const newSession = await createSessionMutation({
-            organizationId: orgId,
-            botId,
-            visitorId,
+            token,
+            currentDomain,
           });
 
           const sessionData: ChatSession = {
-            id: newSession.sessionId,
-            organizationId: orgId,
-            botId,
-            visitorId,
+            sessionToken: newSession.sessionToken,
+            conversationId: newSession.conversationId,
+            organizationId: botConfig?.organizationId ?? "",
+            botId: botConfig?.id ?? "",
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
           };
           setSession(sessionData);
           notifyReady(
-            newSession.sessionId,
+            newSession.conversationId,
             botConfig?.appearance.primaryColor,
             botConfig?.appearance.cornerRadius,
           );
@@ -138,20 +150,16 @@ function WidgetContent() {
 
         // Send message using the session
         await sendMessageMutation({
-          sessionId: currentSession.id,
-          organizationId: currentSession.organizationId,
-          botId: currentSession.botId,
-          visitorId: currentSession.visitorId,
+          conversationId: currentSession.conversationId,
+          sessionToken: currentSession.sessionToken,
           content,
         });
 
         // Trigger AI response generation (streamed via DB updates)
         console.log("[Widget] Generating AI response (streaming)...");
         await generateReplyAction({
-          sessionId: currentSession.id,
-          organizationId: currentSession.organizationId,
-          botId: currentSession.botId,
-          visitorId: currentSession.visitorId,
+          conversationId: currentSession.conversationId,
+          sessionToken: currentSession.sessionToken,
           userMessage: content,
         });
 
@@ -173,9 +181,8 @@ function WidgetContent() {
       }
     },
     [
-      orgId,
-      botId,
-      visitorId,
+      token,
+      currentDomain,
       session,
       botConfig,
       createSessionMutation,
@@ -189,13 +196,11 @@ function WidgetContent() {
    * A new session will be lazily created on the next message send
    */
   const handleRefresh = useCallback(async () => {
-    if (session && orgId && botId && visitorId) {
+    if (session) {
       try {
         await endSessionMutation({
-          sessionId: session.id,
-          organizationId: orgId,
-          botId,
-          visitorId,
+          conversationId: session.conversationId,
+          sessionToken: session.sessionToken,
         });
       } catch (err) {
         console.warn("[Widget] Failed to end session:", err);
@@ -208,11 +213,11 @@ function WidgetContent() {
     setMessages([]);
     setError(null);
     setIsStreaming(false);
-  }, [session, orgId, botId, visitorId, endSessionMutation]);
+  }, [session, endSessionMutation]);
 
   const handleLeadClick = useCallback(
     async (payload: LeadClickPayload) => {
-      if (!session || !orgId || !botId || !visitorId) return;
+      if (!session) return;
 
       const eventType =
         payload.type === "whatsapp"
@@ -221,10 +226,8 @@ function WidgetContent() {
 
       try {
         await trackEventMutation({
-          sessionId: session.id,
-          organizationId: orgId,
-          botId,
-          visitorId,
+          conversationId: session.conversationId,
+          sessionToken: session.sessionToken,
           eventType,
           href: payload.href,
         });
@@ -232,7 +235,7 @@ function WidgetContent() {
         console.warn("[Widget] Failed to track lead event:", err);
       }
     },
-    [session, orgId, botId, visitorId, trackEventMutation],
+    [session, trackEventMutation],
   );
 
   // Error state
@@ -280,7 +283,7 @@ function WidgetContent() {
       style={{ height: "100%", width: "100%" }}
     >
       <ChatContainer
-        key={session?.id || "no-session"}
+        key={session?.conversationId || "no-session"}
         botConfig={botConfig}
         session={session}
         messages={messages}

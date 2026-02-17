@@ -5,8 +5,7 @@
  *
  * <script
  *   src="https://widget.chatify.app/embed.js"
- *   data-organization-id="org_abc123"
- *   data-bot-id="bot_xyz789"
+ *   data-token="et_opaque_token"
  *   async
  * ></script>
  */
@@ -18,8 +17,7 @@ declare global {
 }
 
 interface EmbedConfig {
-  organizationId: string;
-  botId: string;
+  token: string;
   position: "bottom-right" | "bottom-left" | "top-right" | "top-left";
   theme: "light" | "dark";
 }
@@ -37,17 +35,17 @@ interface BotProfileResponse {
     return;
   }
 
-  const organizationId = scriptTag.getAttribute("data-organization-id");
-  const botId = scriptTag.getAttribute("data-bot-id");
+  const token = scriptTag.getAttribute("data-token");
   const position = (scriptTag.getAttribute("data-position") ||
     "bottom-right") as EmbedConfig["position"];
 
-  if (!organizationId || !botId) {
-    console.error(
-      "Chatify: Missing data-organization-id or data-bot-id attributes",
-    );
+  if (!token) {
+    console.error("Chatify: Missing data-token attribute");
     return;
   }
+
+  // Capture a non-null token for nested closures.
+  const embedToken: string = token;
 
   // embed.ts
   // Use injected/env variable for widget URL, fallback to production
@@ -234,7 +232,7 @@ interface BotProfileResponse {
     // 1. CREATE HOST (0x0 fixed element - zero layout impact)
     // ═══════════════════════════════════════════════════════════════════
     const host = document.createElement("div");
-    host.id = `chatify-widget-${organizationId}`;
+    host.id = `chatify-widget-${embedToken}`;
     host.setAttribute("data-chatify-widget", "true");
 
     const hostPos = getHostPosition(position);
@@ -407,7 +405,7 @@ interface BotProfileResponse {
     // ═══════════════════════════════════════════════════════════════════
     const iframe = document.createElement("iframe");
     iframe.id = "chatify-iframe";
-    iframe.src = `${WIDGET_URL}/widget?orgId=${organizationId}&botId=${botId}&visitorId=${getVisitorId()}`;
+    iframe.src = `${WIDGET_URL}/widget?token=${encodeURIComponent(embedToken)}&visitorId=${encodeURIComponent(getVisitorId())}`;
     iframe.allow = "camera; microphone";
     iframe.setAttribute("loading", "lazy");
     iframe.setAttribute("title", "Chatify Chat Widget");

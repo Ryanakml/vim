@@ -24,11 +24,11 @@ interface BotSidebarProps {
   escalationConfig?: EscalationConfig;
   onEscalationConfigChange?: (next: EscalationConfig) => void;
   modelId?: string;
-  apiKey?: string;
+  hasApiKey?: boolean;
   onModelConfigChange?: (next: {
     modelId: string;
     modelProvider: string;
-    apiKey: string;
+    hasApiKey: boolean;
   }) => void;
   onModelConfigDeleted?: () => void;
 }
@@ -42,7 +42,7 @@ export function BotSidebar({
   escalationConfig,
   onEscalationConfigChange,
   modelId,
-  apiKey,
+  hasApiKey,
   onModelConfigChange,
   onModelConfigDeleted,
 }: BotSidebarProps) {
@@ -111,7 +111,7 @@ export function BotSidebar({
             escalationConfig={escalationConfig}
             onEscalationConfigChange={onEscalationConfigChange}
             modelId={modelId}
-            apiKey={apiKey}
+            hasApiKey={hasApiKey}
             onModelConfigChange={onModelConfigChange}
             onModelConfigDeleted={onModelConfigDeleted}
           />

@@ -25,6 +25,7 @@ import {
   useDashboardStats,
   useBotProfile,
   useAIMetrics,
+  useAIPerformanceSeries,
   useKnowledgeUtilization,
   useLeadStats,
 } from "@/lib/convex-client";
@@ -42,13 +43,13 @@ const ACTIVITY_DATA = [
 
 // B. Performance Data (LLM Calls & Spend) - Swapped Main Chart
 const PERFORMANCE_DATA = [
-  { time: "12 AM", calls: 1, spend: 0.02 },
-  { time: "4 AM", calls: 0, spend: 0.0 },
-  { time: "8 AM", calls: 8, spend: 0.15 },
-  { time: "12 PM", calls: 40, spend: 0.85 },
-  { time: "4 PM", calls: 25, spend: 0.55 },
-  { time: "8 PM", calls: 60, spend: 1.2 },
-  { time: "11 PM", calls: 15, spend: 0.35 },
+  { time: "12 AM", calls: 1, tokens: 120, spend: 0.02 },
+  { time: "4 AM", calls: 0, tokens: 0, spend: 0.0 },
+  { time: "8 AM", calls: 8, tokens: 980, spend: 0.15 },
+  { time: "12 PM", calls: 40, tokens: 5200, spend: 0.85 },
+  { time: "4 PM", calls: 25, tokens: 3100, spend: 0.55 },
+  { time: "8 PM", calls: 60, tokens: 7600, spend: 1.2 },
+  { time: "11 PM", calls: 15, tokens: 1800, spend: 0.35 },
 ];
 
 export default function OverviewPage() {
@@ -71,6 +72,7 @@ export default function OverviewPage() {
 
   // Fetch AI metrics
   const aiMetrics = useAIMetrics(botProfile?._id, days);
+  const aiPerformanceSeries = useAIPerformanceSeries(botProfile?._id, days);
   const knowledgeStats = useKnowledgeUtilization(botProfile?._id, days);
   const leadStats = useLeadStats(botProfile?._id, days);
 
@@ -94,16 +96,10 @@ export default function OverviewPage() {
   const leadsWhatsapp = leadStats?.leadsWhatsapp ?? 0;
   const leadsEmail = leadStats?.leadsEmail ?? 0;
 
-  // Prepare performance chart data from AI metrics
-  const performanceChartData = aiMetrics
-    ? [
-        {
-          time: "Metrics",
-          calls: aiMetrics.totalRequests,
-          spend: aiMetrics.totalRequests * 0.01, // Estimated cost per call
-        },
-      ]
-    : PERFORMANCE_DATA;
+  const performanceChartData =
+    aiPerformanceSeries && aiPerformanceSeries.length > 0
+      ? aiPerformanceSeries
+      : PERFORMANCE_DATA;
 
   return (
     <div className="flex h-full w-full flex-col bg-[#09090b] text-zinc-100 p-8 space-y-8 overflow-y-auto transition-colors duration-500">
@@ -207,7 +203,9 @@ export default function OverviewPage() {
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart
                     data={
-                      viewMode === "overview" ? ACTIVITY_DATA : PERFORMANCE_DATA
+                      viewMode === "overview"
+                        ? ACTIVITY_DATA
+                        : performanceChartData
                     }
                     margin={{ top: 10, right: 30, left: 0, bottom: 0 }}
                   >
@@ -281,7 +279,7 @@ export default function OverviewPage() {
                     />
                     <Area
                       type="monotone"
-                      dataKey={viewMode === "overview" ? "messages" : "calls"}
+                      dataKey={viewMode === "overview" ? "messages" : "tokens"}
                       stroke={viewMode === "overview" ? "#3b82f6" : "#a855f7"}
                       strokeWidth={2}
                       fillOpacity={1}

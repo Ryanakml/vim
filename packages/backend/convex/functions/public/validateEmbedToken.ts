@@ -1,23 +1,17 @@
 import { v } from "convex/values";
 import { query } from "../../_generated/server.js";
 import {
-  requireBotProfile,
   requireValidEmbedToken,
+  requireBotProfile,
 } from "../../lib/security.js";
 
 /**
- * PUBLIC QUERY: Get bot profile for embed widget
+ * PUBLIC QUERY: Validate an embed token and return ONLY public bot config.
  *
- * No authentication required.
- * Validates organization_id and bot_id to ensure the bot exists.
- * Returns full profile configuration for widget rendering.
- *
- * Used by: Public widget embed script
- * Access: public (no auth required)
- * Parameters: organization_id, bot_id
- * Returns: BotProfile with all configuration
+ * `currentDomain` should be derived from an unspoofable browser source when possible
+ * (e.g. `document.referrer` hostname from inside the widget iframe).
  */
-export const getBotProfile = query({
+export const validateEmbedToken = query({
   args: {
     token: v.string(),
     currentDomain: v.optional(v.string()),
@@ -27,6 +21,7 @@ export const getBotProfile = query({
       token: args.token,
       currentDomain: args.currentDomain,
     });
+
     const botProfile = await requireBotProfile(ctx, embedToken.bot_id);
 
     return {
@@ -50,7 +45,7 @@ export const getBotProfile = query({
         enableFeedback: botProfile.enable_feedback,
         enableFileUpload: botProfile.enable_file_upload,
         enableSound: botProfile.enable_sound,
-        enableMarkdown: true, // Default to enabled for markdown rendering
+        enableMarkdown: true,
       },
     };
   },
