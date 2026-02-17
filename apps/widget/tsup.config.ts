@@ -7,6 +7,8 @@ export default defineConfig({
   minify: true,
   clean: true,
   define: {
-    "globalThis.__WIDGET_URL__": JSON.stringify("http://localhost:3001"),
+    "globalThis.__WIDGET_URL__": JSON.stringify(
+      "https://vim-widget.vercel.app/",
+    ),
   },
 });

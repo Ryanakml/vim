@@ -91,7 +91,7 @@ export const getDashboardStats: RegisteredQuery<
 });
 
 /**
- * Query: Get lead capture stats for a bot over a time period
+ * Query: Get lead capture stats for a bot (all-time)
  * ✅ Filtered to current user's bot
  */
 export const getLeadStats = query({
@@ -120,12 +120,12 @@ export const getLeadStats = query({
       throw new Error("Unauthorized: Cannot access other user's bot");
     }
 
-    const cutoff = Date.now() - args.days * 24 * 60 * 60 * 1000;
-
     const events = await ctx.db
       .query("businessEvents")
       .withIndex("by_bot_createdAt", (q) =>
-        q.eq("botId", args.botId).gte("createdAt", cutoff),
+        // Note: Lead capture is currently aggregated all-time (no cutoff).
+        // `days` remains in the args for backwards compatibility with existing callers.
+        q.eq("botId", args.botId),
       )
       .collect();
 

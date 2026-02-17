@@ -50,10 +50,10 @@ export type LeadClickPayload = {
 };
 
 export interface ChatSession {
-  id: string;
+  sessionToken: string;
+  conversationId: string;
   organizationId: string;
   botId: string;
-  visitorId: string;
   createdAt: string;
   updatedAt: string;
 }

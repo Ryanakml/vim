@@ -54,7 +54,7 @@ export function ChatContainer({
   useEffect(() => {
     setInput("");
     setIsRefreshing(false);
-  }, [session?.id]);
+  }, [session?.conversationId]);
 
   const handleSend = async (content: string) => {
     if (!content.trim()) return;

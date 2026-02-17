@@ -95,7 +95,7 @@ export function BotEmulator() {
 
       try {
         setIsLoadingSession(true);
-        const session = await createOrGetSession({ botId: botProfile._id });
+        const session = await createOrGetSession({ botId: botProfile._id! });
         if (session) {
           const id = typeof session === "string" ? session : session._id;
           setSessionId(id);
@@ -147,7 +147,7 @@ export function BotEmulator() {
     try {
       // Add user message to database
       await addEmulatorMessage({
-        botId: botProfile._id,
+        botId: botProfile._id!,
         role: "user",
         content: userContent,
       });
@@ -158,7 +158,7 @@ export function BotEmulator() {
       );
 
       // Start streaming response
-      await startStream(botProfile._id, sessionId, userContent);
+      await startStream(botProfile._id!, sessionId, userContent);
 
       console.log("[BotEmulator] Stream completed, fullText:", fullText);
     } catch (error) {
@@ -174,7 +174,7 @@ export function BotEmulator() {
 
     try {
       setIsLoadingSession(true);
-      const newSessionId = await restartSession({ botId: botProfile._id });
+      const newSessionId = await restartSession({ botId: botProfile._id! });
       setSessionId(newSessionId);
       setMessages([]);
     } catch (error) {

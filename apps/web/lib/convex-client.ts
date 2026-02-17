@@ -49,6 +49,12 @@ export function useUpdateBotProfile() {
   return useMutation(api.webchat.updateBotProfile);
 }
 
+// ===== EMBED TOKENS =====
+
+export function useGenerateEmbedToken() {
+  return useMutation(api.embedTokens.generateEmbedToken);
+}
+
 // ===== CONFIGURATION HOOKS =====
 
 /**
@@ -100,7 +106,7 @@ export function useAdminConversations(botId?: Id<"botProfiles"> | "skip") {
 }
 
 /**
- * Hook to fetch public visitor conversations (conversations with visitor_id, no user_id)
+ * Hook to fetch public visitor conversations (conversations with visitor_id)
  * ✅ Used for "Visitor Chats" tab in admin dashboard
  * Pass botId to fetch, or pass "skip" to skip the query
  */
@@ -478,6 +484,19 @@ export function useKnowledgeUtilization(
 }
 
 /**
+ * Hook to fetch AI performance time-series (calls + tokens) for Overview chart.
+ */
+export function useAIPerformanceSeries(
+  botId?: Id<"botProfiles"> | "skip",
+  days: number = 1,
+) {
+  return useQuery(
+    api.aiAnalytics.getAIPerformanceSeries,
+    botId && botId !== "skip" ? { botId, days } : "skip",
+  );
+}
+
+/**
  * Hook to fetch knowledge base usage stats
  */
 export function useKBStats(
@@ -513,6 +532,20 @@ export function useParsePDFAndAddKnowledge() {
  */
 export function useScrapeWebsiteAndAddKnowledge() {
   return useAction(api.knowledge.scrapeWebsiteAndAddKnowledge);
+}
+
+/**
+ * Hook to crawl a website and get list of discoverable pages
+ */
+export function useCrawlWebsiteMeta() {
+  return useAction(api.knowledge.crawlWebsiteMeta);
+}
+
+/**
+ * Hook to scrape multiple website URLs and add as knowledge
+ */
+export function useScrapeMultipleWebsitesAndAddKnowledge() {
+  return useAction(api.knowledge.scrapeMultipleWebsitesAndAddKnowledge);
 }
 
 /**

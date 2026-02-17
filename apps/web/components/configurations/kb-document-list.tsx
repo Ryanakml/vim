@@ -43,9 +43,7 @@ export function KBDocumentList({
 
     return documents.filter((doc) => {
       const title = extractTitleFromContent(doc.text).toLowerCase();
-      return (
-        title.includes(query) || doc.text.toLowerCase().includes(query)
-      );
+      return title.includes(query) || doc.text.toLowerCase().includes(query);
     });
   }, [documents, searchQuery]);
 
@@ -75,7 +73,9 @@ export function KBDocumentList({
         <Card className="border-dashed">
           <CardContent className="flex items-center justify-center py-8 text-center">
             <div>
-              <p className="text-sm text-muted-foreground">No documents found</p>
+              <p className="text-sm text-muted-foreground">
+                No documents found
+              </p>
               {searchQuery && (
                 <p className="text-xs text-muted-foreground mt-1">
                   Try a different search
@@ -85,7 +85,7 @@ export function KBDocumentList({
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-2">
+        <div className="max-h-[520px] space-y-2 overflow-y-auto pr-1">
           {filteredDocs.map((doc) => {
             const stats = calculateDocStats(doc.text);
             const isSelected = selectedId

@@ -116,7 +116,7 @@ export function ChatMessages({
                   borderTopLeftRadius: `${cornerRadius * 0.15}px`,
                 }}
               >
-                <p className="text-sm leading-relaxed break-words">
+                <p className="text-sm leading-relaxed break-words whitespace-pre-wrap">
                   {streamingContent}
                 </p>
               </div>

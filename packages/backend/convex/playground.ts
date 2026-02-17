@@ -2,6 +2,12 @@ import { v } from "convex/values";
 import { query, mutation } from "./_generated/server.js";
 import { api } from "./_generated/api.js";
 import { Id } from "./_generated/dataModel.js";
+import {
+  assertCanAccessResource,
+  assertIsOwner,
+  getTenantContext,
+  logAudit,
+} from "./lib/security.js";
 
 /**
  * Create or retrieve the active playground session for a bot
@@ -12,37 +18,101 @@ export const getOrCreatePlaygroundSession = mutation({
     botId: v.id("botProfiles"),
   },
   handler: async (ctx, args) => {
-    // Authenticate the user
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Unauthorized");
-    const userId = identity.subject;
+    const tenant = await getTenantContext(ctx);
 
-    // Query all conversations for this bot with playground tag and this user
-    const allConversations = await ctx.db.query("conversations").collect();
-    const playgroundSessions = allConversations.filter(
-      (c) =>
-        c.bot_id === args.botId &&
-        c.user_id === userId &&
-        c.integration === "playground" &&
-        c.status === "active",
+    const bot = await ctx.db.get(args.botId);
+    try {
+      assertCanAccessResource(bot, tenant, "Unauthorized: Cannot access bot");
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      await logAudit(ctx, {
+        user_id: tenant.userId,
+        organization_id: tenant.orgId,
+        action: "get_or_create_playground_session",
+        resource_type: "botProfile",
+        resource_id: String(args.botId),
+        status: "denied",
+        error_message: errorMessage,
+      });
+      throw error;
+    }
+
+    const userId = tenant.userId;
+
+    // Query conversations for this bot with playground tag and this user
+    const sessions = await ctx.db
+      .query("conversations")
+      .withIndex("by_user_bot", (q) =>
+        q.eq("user_id", userId).eq("bot_id", args.botId),
+      )
+      .collect();
+
+    const playgroundSessions = sessions.filter(
+      (c) => c.integration === "playground" && c.status === "active",
     );
 
     // If active playground session exists, return it
     if (playgroundSessions.length > 0) {
+      await logAudit(ctx, {
+        user_id: tenant.userId,
+        organization_id: tenant.orgId,
+        action: "get_or_create_playground_session",
+        resource_type: "conversation",
+        resource_id: String(playgroundSessions[0]!._id),
+        status: "success",
+        changes: {
+          before: { _id: playgroundSessions[0]!._id },
+          after: { _id: playgroundSessions[0]!._id },
+        },
+      });
       return playgroundSessions[0];
     }
 
     // Create new playground session with authenticated user
-    return await ctx.db.insert("conversations", {
-      bot_id: args.botId,
-      user_id: userId,
-      integration: "playground",
-      topic: "Playground Test Session",
-      status: "active",
-      created_at: Date.now(),
-      updated_at: Date.now(),
-      last_message_at: Date.now(),
-    });
+    let auditLogged = false;
+    try {
+      const id = await ctx.db.insert("conversations", {
+        bot_id: args.botId,
+        user_id: userId,
+        organization_id: bot.organization_id,
+        integration: "playground",
+        topic: "Playground Test Session",
+        status: "active",
+        created_at: Date.now(),
+        updated_at: Date.now(),
+        last_message_at: Date.now(),
+      });
+
+      await logAudit(ctx, {
+        user_id: tenant.userId,
+        organization_id: bot.organization_id ?? tenant.orgId,
+        action: "create_playground_session",
+        resource_type: "conversation",
+        resource_id: String(id),
+        status: "success",
+        changes: {
+          before: null,
+          after: { _id: id, botId: args.botId },
+        },
+      });
+      auditLogged = true;
+      return id;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      if (!auditLogged) {
+        await logAudit(ctx, {
+          user_id: tenant.userId,
+          organization_id: bot.organization_id ?? tenant.orgId,
+          action: "create_playground_session",
+          resource_type: "conversation",
+          status: "error",
+          error_message: errorMessage,
+        });
+      }
+      throw error;
+    }
   },
 });
 
@@ -54,10 +124,12 @@ export const getPlaygroundSession = query({
     botId: v.id("botProfiles"),
   },
   handler: async (ctx, args) => {
-    // ✅ Add auth check
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Unauthorized");
-    const userId = identity.subject;
+    const tenant = await getTenantContext(ctx);
+
+    const bot = await ctx.db.get(args.botId);
+    assertCanAccessResource(bot, tenant, "Unauthorized: Cannot access bot");
+
+    const userId = tenant.userId;
 
     // ✅ Use indexed query instead of collecting all conversations
     const sessions = await ctx.db
@@ -101,19 +173,38 @@ export const addPlaygroundMessage = mutation({
     content: v.string(),
   },
   handler: async (ctx, args) => {
-    // Authenticate the user
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Unauthorized");
-    const userId = identity.subject;
+    const tenant = await getTenantContext(ctx);
+
+    const bot = await ctx.db.get(args.botId);
+    try {
+      assertCanAccessResource(bot, tenant, "Unauthorized: Cannot access bot");
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      await logAudit(ctx, {
+        user_id: tenant.userId,
+        organization_id: tenant.orgId,
+        action: "add_playground_message",
+        resource_type: "botProfile",
+        resource_id: String(args.botId),
+        status: "denied",
+        error_message: errorMessage,
+      });
+      throw error;
+    }
+
+    const userId = tenant.userId;
 
     // Get or create playground session
-    const allConversations = await ctx.db.query("conversations").collect();
-    let playgroundSession = allConversations.find(
-      (c) =>
-        c.bot_id === args.botId &&
-        c.user_id === userId &&
-        c.integration === "playground" &&
-        c.status === "active",
+    const sessions = await ctx.db
+      .query("conversations")
+      .withIndex("by_user_bot", (q) =>
+        q.eq("user_id", userId).eq("bot_id", args.botId),
+      )
+      .collect();
+
+    let playgroundSession = sessions.find(
+      (c) => c.integration === "playground" && c.status === "active",
     );
 
     if (!playgroundSession) {
@@ -121,6 +212,7 @@ export const addPlaygroundMessage = mutation({
       const conversationId = await ctx.db.insert("conversations", {
         bot_id: args.botId,
         user_id: userId,
+        organization_id: bot.organization_id,
         integration: "playground",
         topic: "Playground Test Session",
         status: "active",
@@ -134,6 +226,7 @@ export const addPlaygroundMessage = mutation({
         _creationTime: Date.now(),
         bot_id: args.botId,
         user_id: userId,
+        organization_id: bot.organization_id,
         integration: "playground",
         topic: "Playground Test Session",
         status: "active",
@@ -143,22 +236,52 @@ export const addPlaygroundMessage = mutation({
       };
     }
 
-    // Add message to conversation
-    const messageId = await ctx.db.insert("messages", {
-      conversation_id: playgroundSession._id,
-      user_id: userId,
-      role: args.role,
-      content: args.content,
-      created_at: Date.now(),
-    });
+    let auditLogged = false;
+    try {
+      // Add message to conversation
+      const messageId = await ctx.db.insert("messages", {
+        conversation_id: playgroundSession._id,
+        user_id: userId,
+        role: args.role,
+        content: args.content,
+        created_at: Date.now(),
+      });
 
-    // Update conversation's last_message_at
-    await ctx.db.patch(playgroundSession._id, {
-      last_message_at: Date.now(),
-      updated_at: Date.now(),
-    });
+      // Update conversation's last_message_at
+      await ctx.db.patch(playgroundSession._id, {
+        last_message_at: Date.now(),
+        updated_at: Date.now(),
+      });
 
-    return messageId;
+      await logAudit(ctx, {
+        user_id: tenant.userId,
+        organization_id: bot.organization_id ?? tenant.orgId,
+        action: "add_playground_message",
+        resource_type: "message",
+        resource_id: String(messageId),
+        status: "success",
+        changes: {
+          before: null,
+          after: { conversationId: playgroundSession._id, role: args.role },
+        },
+      });
+      auditLogged = true;
+      return messageId;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      if (!auditLogged) {
+        await logAudit(ctx, {
+          user_id: tenant.userId,
+          organization_id: bot.organization_id ?? tenant.orgId,
+          action: "add_playground_message",
+          resource_type: "message",
+          status: "error",
+          error_message: errorMessage,
+        });
+      }
+      throw error;
+    }
   },
 });
 
@@ -171,19 +294,38 @@ export const restartPlaygroundSession = mutation({
     botId: v.id("botProfiles"),
   },
   handler: async (ctx, args) => {
-    // Authenticate the user
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Unauthorized");
-    const userId = identity.subject;
+    const tenant = await getTenantContext(ctx);
+
+    const bot = await ctx.db.get(args.botId);
+    try {
+      assertCanAccessResource(bot, tenant, "Unauthorized: Cannot access bot");
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      await logAudit(ctx, {
+        user_id: tenant.userId,
+        organization_id: tenant.orgId,
+        action: "restart_playground_session",
+        resource_type: "botProfile",
+        resource_id: String(args.botId),
+        status: "denied",
+        error_message: errorMessage,
+      });
+      throw error;
+    }
+
+    const userId = tenant.userId;
 
     // Find and close the current active playground session
-    const allConversations = await ctx.db.query("conversations").collect();
-    const playgroundSession = allConversations.find(
-      (c) =>
-        c.bot_id === args.botId &&
-        c.user_id === userId &&
-        c.integration === "playground" &&
-        c.status === "active",
+    const sessions = await ctx.db
+      .query("conversations")
+      .withIndex("by_user_bot", (q) =>
+        q.eq("user_id", userId).eq("bot_id", args.botId),
+      )
+      .collect();
+
+    const playgroundSession = sessions.find(
+      (c) => c.integration === "playground" && c.status === "active",
     );
 
     if (playgroundSession) {
@@ -193,17 +335,50 @@ export const restartPlaygroundSession = mutation({
       });
     }
 
-    // Create a fresh playground session with authenticated user
-    return await ctx.db.insert("conversations", {
-      bot_id: args.botId,
-      user_id: userId,
-      integration: "playground",
-      topic: "Playground Test Session",
-      status: "active",
-      created_at: Date.now(),
-      updated_at: Date.now(),
-      last_message_at: Date.now(),
-    });
+    let auditLogged = false;
+    try {
+      // Create a fresh playground session with authenticated user
+      const id = await ctx.db.insert("conversations", {
+        bot_id: args.botId,
+        user_id: userId,
+        organization_id: bot.organization_id,
+        integration: "playground",
+        topic: "Playground Test Session",
+        status: "active",
+        created_at: Date.now(),
+        updated_at: Date.now(),
+        last_message_at: Date.now(),
+      });
+
+      await logAudit(ctx, {
+        user_id: tenant.userId,
+        organization_id: bot.organization_id ?? tenant.orgId,
+        action: "restart_playground_session",
+        resource_type: "conversation",
+        resource_id: String(id),
+        status: "success",
+        changes: {
+          before: playgroundSession ? { _id: playgroundSession._id } : null,
+          after: { _id: id },
+        },
+      });
+      auditLogged = true;
+      return id;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      if (!auditLogged) {
+        await logAudit(ctx, {
+          user_id: tenant.userId,
+          organization_id: bot.organization_id ?? tenant.orgId,
+          action: "restart_playground_session",
+          resource_type: "conversation",
+          status: "error",
+          error_message: errorMessage,
+        });
+      }
+      throw error;
+    }
   },
 });
 
@@ -215,16 +390,15 @@ export const getPlaygroundMessages = query({
     sessionId: v.id("conversations"),
   },
   handler: async (ctx, args) => {
-    // ✅ Add auth check
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Unauthorized");
-    const userId = identity.subject;
+    const tenant = await getTenantContext(ctx);
 
     // ✅ Verify conversation ownership before returning messages
     const conversation = await ctx.db.get(args.sessionId);
-    if (!conversation || conversation.user_id !== userId) {
-      throw new Error("Unauthorized: Cannot access this conversation");
-    }
+    assertIsOwner(
+      conversation,
+      tenant,
+      "Unauthorized: Cannot access this conversation",
+    );
 
     // ✅ Use indexed query instead of collecting all messages
     return await ctx.db
@@ -249,37 +423,100 @@ export const getOrCreateEmulatorSession = mutation({
     botId: v.id("botProfiles"),
   },
   handler: async (ctx, args) => {
-    // Authenticate the user
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Unauthorized");
-    const userId = identity.subject;
+    const tenant = await getTenantContext(ctx);
 
-    // Query all conversations for this bot with emulator tag and this user
-    const allConversations = await ctx.db.query("conversations").collect();
-    const emulatorSessions = allConversations.filter(
-      (c) =>
-        c.bot_id === args.botId &&
-        c.user_id === userId &&
-        c.integration === "emulator" &&
-        c.status === "active",
+    const bot = await ctx.db.get(args.botId);
+    try {
+      assertCanAccessResource(bot, tenant, "Unauthorized: Cannot access bot");
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      await logAudit(ctx, {
+        user_id: tenant.userId,
+        organization_id: tenant.orgId,
+        action: "get_or_create_emulator_session",
+        resource_type: "botProfile",
+        resource_id: String(args.botId),
+        status: "denied",
+        error_message: errorMessage,
+      });
+      throw error;
+    }
+
+    const userId = tenant.userId;
+
+    const sessions = await ctx.db
+      .query("conversations")
+      .withIndex("by_user_bot", (q) =>
+        q.eq("user_id", userId).eq("bot_id", args.botId),
+      )
+      .collect();
+
+    const emulatorSessions = sessions.filter(
+      (c) => c.integration === "emulator" && c.status === "active",
     );
 
     // If active emulator session exists, return it
     if (emulatorSessions.length > 0) {
+      await logAudit(ctx, {
+        user_id: tenant.userId,
+        organization_id: tenant.orgId,
+        action: "get_or_create_emulator_session",
+        resource_type: "conversation",
+        resource_id: String(emulatorSessions[0]!._id),
+        status: "success",
+        changes: {
+          before: { _id: emulatorSessions[0]!._id },
+          after: { _id: emulatorSessions[0]!._id },
+        },
+      });
       return emulatorSessions[0];
     }
 
-    // Create new emulator session with authenticated user
-    return await ctx.db.insert("conversations", {
-      bot_id: args.botId,
-      user_id: userId,
-      integration: "emulator",
-      topic: "Emulator Test Session",
-      status: "active",
-      created_at: Date.now(),
-      updated_at: Date.now(),
-      last_message_at: Date.now(),
-    });
+    let auditLogged = false;
+    try {
+      // Create new emulator session with authenticated user
+      const id = await ctx.db.insert("conversations", {
+        bot_id: args.botId,
+        user_id: userId,
+        organization_id: bot.organization_id,
+        integration: "emulator",
+        topic: "Emulator Test Session",
+        status: "active",
+        created_at: Date.now(),
+        updated_at: Date.now(),
+        last_message_at: Date.now(),
+      });
+
+      await logAudit(ctx, {
+        user_id: tenant.userId,
+        organization_id: bot.organization_id ?? tenant.orgId,
+        action: "create_emulator_session",
+        resource_type: "conversation",
+        resource_id: String(id),
+        status: "success",
+        changes: {
+          before: null,
+          after: { _id: id, botId: args.botId },
+        },
+      });
+      auditLogged = true;
+      return id;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      if (!auditLogged) {
+        await logAudit(ctx, {
+          user_id: tenant.userId,
+          organization_id: bot.organization_id ?? tenant.orgId,
+          action: "create_emulator_session",
+          resource_type: "conversation",
+          status: "error",
+          error_message: errorMessage,
+        });
+      }
+      throw error;
+    }
   },
 });
 
@@ -291,10 +528,17 @@ export const getEmulatorSession = query({
     botId: v.id("botProfiles"),
   },
   handler: async (ctx, args): Promise<any> => {
-    // ✅ Use indexed query instead of collecting all conversations
+    const tenant = await getTenantContext(ctx);
+
+    const bot = await ctx.db.get(args.botId);
+    assertCanAccessResource(bot, tenant, "Unauthorized: Cannot access bot");
+
+    // ✅ Use indexed query scoped to user + bot
     const sessions = await ctx.db
       .query("conversations")
-      .withIndex("by_bot_id", (q) => q.eq("bot_id", args.botId))
+      .withIndex("by_user_bot", (q) =>
+        q.eq("user_id", tenant.userId).eq("bot_id", args.botId),
+      )
       .collect();
 
     const emulatorSession = sessions.find(
@@ -331,19 +575,38 @@ export const addEmulatorMessage = mutation({
     content: v.string(),
   },
   handler: async (ctx, args) => {
-    // Authenticate the user
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Unauthorized");
-    const userId = identity.subject;
+    const tenant = await getTenantContext(ctx);
+
+    const bot = await ctx.db.get(args.botId);
+    try {
+      assertCanAccessResource(bot, tenant, "Unauthorized: Cannot access bot");
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      await logAudit(ctx, {
+        user_id: tenant.userId,
+        organization_id: tenant.orgId,
+        action: "add_emulator_message",
+        resource_type: "botProfile",
+        resource_id: String(args.botId),
+        status: "denied",
+        error_message: errorMessage,
+      });
+      throw error;
+    }
+
+    const userId = tenant.userId;
 
     // Get or create emulator session
-    const allConversations = await ctx.db.query("conversations").collect();
-    let emulatorSession = allConversations.find(
-      (c) =>
-        c.bot_id === args.botId &&
-        c.user_id === userId &&
-        c.integration === "emulator" &&
-        c.status === "active",
+    const sessions = await ctx.db
+      .query("conversations")
+      .withIndex("by_user_bot", (q) =>
+        q.eq("user_id", userId).eq("bot_id", args.botId),
+      )
+      .collect();
+
+    let emulatorSession = sessions.find(
+      (c) => c.integration === "emulator" && c.status === "active",
     );
 
     if (!emulatorSession) {
@@ -351,6 +614,7 @@ export const addEmulatorMessage = mutation({
       const conversationId = await ctx.db.insert("conversations", {
         bot_id: args.botId,
         user_id: userId,
+        organization_id: bot.organization_id,
         integration: "emulator",
         topic: "Emulator Test Session",
         status: "active",
@@ -364,6 +628,7 @@ export const addEmulatorMessage = mutation({
         _creationTime: Date.now(),
         bot_id: args.botId,
         user_id: userId,
+        organization_id: bot.organization_id,
         integration: "emulator",
         topic: "Emulator Test Session",
         status: "active",
@@ -373,22 +638,52 @@ export const addEmulatorMessage = mutation({
       };
     }
 
-    // Add message to conversation
-    const messageId = await ctx.db.insert("messages", {
-      conversation_id: emulatorSession._id,
-      user_id: userId,
-      role: args.role,
-      content: args.content,
-      created_at: Date.now(),
-    });
+    let auditLogged = false;
+    try {
+      // Add message to conversation
+      const messageId = await ctx.db.insert("messages", {
+        conversation_id: emulatorSession._id,
+        user_id: userId,
+        role: args.role,
+        content: args.content,
+        created_at: Date.now(),
+      });
 
-    // Update conversation's last_message_at
-    await ctx.db.patch(emulatorSession._id, {
-      last_message_at: Date.now(),
-      updated_at: Date.now(),
-    });
+      // Update conversation's last_message_at
+      await ctx.db.patch(emulatorSession._id, {
+        last_message_at: Date.now(),
+        updated_at: Date.now(),
+      });
 
-    return messageId;
+      await logAudit(ctx, {
+        user_id: tenant.userId,
+        organization_id: bot.organization_id ?? tenant.orgId,
+        action: "add_emulator_message",
+        resource_type: "message",
+        resource_id: String(messageId),
+        status: "success",
+        changes: {
+          before: null,
+          after: { conversationId: emulatorSession._id, role: args.role },
+        },
+      });
+      auditLogged = true;
+      return messageId;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      if (!auditLogged) {
+        await logAudit(ctx, {
+          user_id: tenant.userId,
+          organization_id: bot.organization_id ?? tenant.orgId,
+          action: "add_emulator_message",
+          resource_type: "message",
+          status: "error",
+          error_message: errorMessage,
+        });
+      }
+      throw error;
+    }
   },
 });
 
@@ -401,19 +696,38 @@ export const restartEmulatorSession = mutation({
     botId: v.id("botProfiles"),
   },
   handler: async (ctx, args) => {
-    // Authenticate the user
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Unauthorized");
-    const userId = identity.subject;
+    const tenant = await getTenantContext(ctx);
+
+    const bot = await ctx.db.get(args.botId);
+    try {
+      assertCanAccessResource(bot, tenant, "Unauthorized: Cannot access bot");
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      await logAudit(ctx, {
+        user_id: tenant.userId,
+        organization_id: tenant.orgId,
+        action: "restart_emulator_session",
+        resource_type: "botProfile",
+        resource_id: String(args.botId),
+        status: "denied",
+        error_message: errorMessage,
+      });
+      throw error;
+    }
+
+    const userId = tenant.userId;
 
     // Find and close the current active emulator session
-    const allConversations = await ctx.db.query("conversations").collect();
-    const emulatorSession = allConversations.find(
-      (c) =>
-        c.bot_id === args.botId &&
-        c.user_id === userId &&
-        c.integration === "emulator" &&
-        c.status === "active",
+    const sessions = await ctx.db
+      .query("conversations")
+      .withIndex("by_user_bot", (q) =>
+        q.eq("user_id", userId).eq("bot_id", args.botId),
+      )
+      .collect();
+
+    const emulatorSession = sessions.find(
+      (c) => c.integration === "emulator" && c.status === "active",
     );
 
     if (emulatorSession) {
@@ -423,17 +737,50 @@ export const restartEmulatorSession = mutation({
       });
     }
 
-    // Create a fresh emulator session with authenticated user
-    return await ctx.db.insert("conversations", {
-      bot_id: args.botId,
-      user_id: userId,
-      integration: "emulator",
-      topic: "Emulator Test Session",
-      status: "active",
-      created_at: Date.now(),
-      updated_at: Date.now(),
-      last_message_at: Date.now(),
-    });
+    let auditLogged = false;
+    try {
+      // Create a fresh emulator session with authenticated user
+      const id = await ctx.db.insert("conversations", {
+        bot_id: args.botId,
+        user_id: userId,
+        organization_id: bot.organization_id,
+        integration: "emulator",
+        topic: "Emulator Test Session",
+        status: "active",
+        created_at: Date.now(),
+        updated_at: Date.now(),
+        last_message_at: Date.now(),
+      });
+
+      await logAudit(ctx, {
+        user_id: tenant.userId,
+        organization_id: bot.organization_id ?? tenant.orgId,
+        action: "restart_emulator_session",
+        resource_type: "conversation",
+        resource_id: String(id),
+        status: "success",
+        changes: {
+          before: emulatorSession ? { _id: emulatorSession._id } : null,
+          after: { _id: id },
+        },
+      });
+      auditLogged = true;
+      return id;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      if (!auditLogged) {
+        await logAudit(ctx, {
+          user_id: tenant.userId,
+          organization_id: bot.organization_id ?? tenant.orgId,
+          action: "restart_emulator_session",
+          resource_type: "conversation",
+          status: "error",
+          error_message: errorMessage,
+        });
+      }
+      throw error;
+    }
   },
 });
 
@@ -445,16 +792,15 @@ export const getEmulatorMessages = query({
     sessionId: v.id("conversations"),
   },
   handler: async (ctx, args) => {
-    // ✅ Add auth check
-    const identity = await ctx.auth.getUserIdentity();
-    if (!identity) throw new Error("Unauthorized");
-    const userId = identity.subject;
+    const tenant = await getTenantContext(ctx);
 
     // ✅ Verify conversation ownership before returning messages
     const conversation = await ctx.db.get(args.sessionId);
-    if (!conversation || conversation.user_id !== userId) {
-      throw new Error("Unauthorized: Cannot access this conversation");
-    }
+    assertIsOwner(
+      conversation,
+      tenant,
+      "Unauthorized: Cannot access this conversation",
+    );
 
     // ✅ Use indexed query instead of collecting all messages
     return await ctx.db

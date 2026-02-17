@@ -27,10 +27,8 @@ import { api } from "../../_generated/api.js";
  */
 export const generateReply = action({
   args: {
-    sessionId: v.string(),
-    organizationId: v.string(),
-    botId: v.string(),
-    visitorId: v.string(),
+    conversationId: v.string(),
+    sessionToken: v.string(),
     userMessage: v.string(),
   },
   handler: async (
@@ -43,39 +41,17 @@ export const generateReply = action({
     provider?: string;
     error?: string;
   }> => {
-    const { sessionId, organizationId, botId, visitorId, userMessage } = args;
+    const { conversationId, sessionToken, userMessage } = args;
 
-    console.log(
-      `[generateReply] Starting - sessionId: ${sessionId}, botId: ${botId}, visitorId: ${visitorId}`,
-    );
-
-    // ✅ VALIDATION 1: Verify session exists and matches all IDs
-    const session: {
-      _id: string;
-      conversationId: string;
-      organizationId: string;
-      botId: string;
-      visitorId: string;
-    } | null = await ctx.runQuery(api.public.getSessionDetails, {
-      sessionId,
-      organizationId,
-      botId,
-      visitorId,
+    // ✅ VALIDATION: Verify conversation exists, is active, and belongs to sessionToken
+    const conversationStatus: {
+      exists: boolean;
+      isActive: boolean;
+      botId?: string;
+    } = await ctx.runQuery(api.public.getConversationStatus, {
+      conversationId,
+      sessionToken,
     });
-
-    if (!session) {
-      const error = "Session validation failed - session not found or invalid";
-      console.error(`[generateReply] ${error}`);
-      return { success: false, error };
-    }
-
-    // ✅ VALIDATION 2: Verify conversation still exists and is active
-    const conversationStatus = await ctx.runQuery(
-      api.public.getConversationStatus,
-      {
-        conversationId: session.conversationId,
-      },
-    );
 
     if (!conversationStatus.exists) {
       const error = "Conversation not found";
@@ -87,6 +63,10 @@ export const generateReply = action({
       const error = "Conversation is closed";
       console.error(`[generateReply] ${error}`);
       return { success: false, error };
+    }
+
+    if (!conversationStatus.botId) {
+      return { success: false, error: "Conversation bot not found" };
     }
 
     // ✅ SECURITY: Use validated conversation_id and botId
@@ -103,8 +83,8 @@ export const generateReply = action({
         provider?: string;
         error?: string;
       } = await ctx.runAction(api.ai.generateBotResponse, {
-        botId: botId as any, // botId is a string from widget, will be converted to Id type
-        conversationId: session.conversationId as any, // conversationId is validated but needs type casting
+        botId: conversationStatus.botId as any,
+        conversationId: conversationId as any,
         userMessage,
         integration: "widget", // Track widget-specific responses for analytics
       });

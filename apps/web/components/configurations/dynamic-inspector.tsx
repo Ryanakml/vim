@@ -55,11 +55,11 @@ interface DynamicInspectorProps {
   escalationConfig?: EscalationConfig;
   onEscalationConfigChange?: (next: EscalationConfig) => void;
   modelId?: string;
-  apiKey?: string;
+  hasApiKey?: boolean;
   onModelConfigChange?: (next: {
     modelId: string;
     modelProvider: string;
-    apiKey: string;
+    hasApiKey: boolean;
   }) => void;
   onModelConfigDeleted?: () => void;
 }
@@ -108,7 +108,7 @@ export function DynamicInspector({
   escalationConfig,
   onEscalationConfigChange,
   modelId,
-  apiKey,
+  hasApiKey,
   onModelConfigChange,
   onModelConfigDeleted,
 }: DynamicInspectorProps) {
@@ -204,11 +204,12 @@ export function DynamicInspector({
         : ("gemini-2.5-flash" as ModelId);
 
     setTempModelId(incomingModelId);
-    setTempApiKey(apiKey || "");
+    // Never hydrate a stored API key back into the client.
+    setTempApiKey("");
     setShowApiKey(false);
     setError(null);
     setSuccessMessage(null);
-  }, [mode, modelId, apiKey]);
+  }, [mode, modelId]);
 
   // ===== KNOWLEDGE BASE: SAVE HANDLER =====
   const handleSaveKnowledgeBase = async () => {
@@ -359,7 +360,9 @@ export function DynamicInspector({
       setError("Invalid model selected");
       return;
     }
-    if (!tempApiKey.trim()) {
+    const nextApiKey = tempApiKey.trim();
+    const canSaveWithoutKey = Boolean(hasApiKey) && !nextApiKey;
+    if (!nextApiKey && !canSaveWithoutKey) {
       setError("API key is required");
       return;
     }
@@ -369,14 +372,18 @@ export function DynamicInspector({
       await updateBotConfig({
         model_id: tempModelId,
         model_provider: meta.provider,
-        api_key: tempApiKey,
+        api_key: nextApiKey ? nextApiKey : undefined,
       });
 
       onModelConfigChange?.({
         modelId: tempModelId,
         modelProvider: meta.provider,
-        apiKey: tempApiKey,
+        hasApiKey: true,
       });
+
+      // Short-term safeguard: never keep the key in client state after saving.
+      setTempApiKey("");
+      setShowApiKey(false);
 
       setSuccessMessage("Model configuration saved successfully");
       setTimeout(() => setSuccessMessage(null), 3000);
@@ -570,6 +577,7 @@ export function DynamicInspector({
   if (mode === "model") {
     const meta = MODEL_CONFIG[tempModelId];
     const providerLabel = meta?.provider || "Provider";
+    const hasStoredApiKey = Boolean(hasApiKey);
 
     return (
       <div className="flex h-full w-full flex-col border-l bg-muted/10">
@@ -636,7 +644,11 @@ export function DynamicInspector({
             <div className="relative">
               <Input
                 type={showApiKey ? "text" : "password"}
-                placeholder={meta?.placeholder || "Enter your API key"}
+                placeholder={
+                  hasStoredApiKey
+                    ? "•••••••••••••••• (saved)"
+                    : meta?.placeholder || "Enter your API key"
+                }
                 value={tempApiKey}
                 onChange={(e) => setTempApiKey(e.target.value)}
                 className="pr-10 font-mono text-xs bg-zinc-900/50 border-zinc-800"
@@ -657,17 +669,22 @@ export function DynamicInspector({
             </div>
 
             <p className="text-[11px] text-muted-foreground">
-              API keys are stored in plaintext on the backend for immediate
-              model access.
+              Keys are encrypted at rest and never shown again after saving.
             </p>
           </div>
 
           <div className="flex gap-2 pt-2 border-t border-zinc-800 flex-shrink-0">
             <Button
               onClick={handleSaveModelConfig}
-              disabled={isModelSaving || !tempApiKey.trim()}
+              disabled={
+                isModelSaving ||
+                (!tempApiKey.trim() && !hasStoredApiKey) ||
+                isModelDeleting
+              }
               className={`flex-1 text-xs ${
-                isModelSaving || !tempApiKey.trim()
+                isModelSaving ||
+                (!tempApiKey.trim() && !hasStoredApiKey) ||
+                isModelDeleting
                   ? "bg-zinc-800 text-muted-foreground cursor-not-allowed"
                   : "bg-blue-600 hover:bg-blue-700 text-white"
               }`}

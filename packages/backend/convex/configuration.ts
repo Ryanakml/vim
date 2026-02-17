@@ -1,5 +1,10 @@
 import { v } from "convex/values";
 import { query, mutation, internalQuery } from "./_generated/server.js";
+import { logAudit } from "./lib/security.js";
+import {
+  decryptSecretFromStorage,
+  encryptSecretForStorage,
+} from "./secrets.js";
 
 // ===== CONFIGURATION =====
 
@@ -25,11 +30,13 @@ export const getBotConfig: ReturnType<typeof query> = query({
       return null;
     }
 
+    const hasApiKey = Boolean(profile.api_key);
+
     return {
       id: profile._id,
       model_provider: profile.model_provider || null,
       model_id: profile.model_id || null,
-      api_key: profile.api_key || null,
+      has_api_key: hasApiKey,
       system_prompt: profile.system_prompt || null,
       temperature: profile.temperature ?? null,
       max_tokens: profile.max_tokens ?? null,
@@ -56,11 +63,13 @@ export const getBotConfigByBotId = internalQuery({
     const profile = await ctx.db.get(args.botId);
     if (!profile) return null;
 
+    const apiKey = await decryptSecretFromStorage(profile.api_key || null);
+
     return {
       id: profile._id,
       model_provider: profile.model_provider || null,
       model_id: profile.model_id || null,
-      api_key: profile.api_key || null,
+      api_key: apiKey,
       system_prompt: profile.system_prompt || null,
       temperature: profile.temperature ?? null,
       max_tokens: profile.max_tokens ?? null,
@@ -100,6 +109,13 @@ export const updateBotConfig: ReturnType<typeof mutation> = mutation({
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
+      await logAudit(ctx, {
+        user_id: "unauthenticated",
+        action: "update_bot_config",
+        resource_type: "botProfile",
+        status: "denied",
+        error_message: "Unauthorized: Must be logged in",
+      });
       throw new Error("Unauthorized: Must be logged in");
     }
 
@@ -111,6 +127,15 @@ export const updateBotConfig: ReturnType<typeof mutation> = mutation({
       .first();
 
     if (!profile) {
+      await logAudit(ctx, {
+        user_id: userId,
+        organization_id: (identity.org_id as string | undefined) || undefined,
+        action: "update_bot_config",
+        resource_type: "botProfile",
+        status: "error",
+        error_message:
+          "Bot profile not found. Visit Webchat → Bot Profile once to initialize your bot.",
+      });
       throw new Error(
         "Bot profile not found. Visit Webchat → Bot Profile once to initialize your bot.",
       );
@@ -135,7 +160,14 @@ export const updateBotConfig: ReturnType<typeof mutation> = mutation({
     // Distinguish undefined (not sent) from null (explicitly cleared)
     if (model_provider !== undefined) updates.model_provider = model_provider;
     if (model_id !== undefined) updates.model_id = model_id;
-    if (api_key !== undefined) updates.api_key = api_key;
+    if (api_key !== undefined) {
+      if (api_key === null) {
+        updates.api_key = null;
+      } else {
+        const encrypted = await encryptSecretForStorage(api_key);
+        updates.api_key = encrypted;
+      }
+    }
     if (system_prompt !== undefined) updates.system_prompt = system_prompt;
 
     // Smart defaults: if not in advanced mode, ensure defaults are set
@@ -158,8 +190,42 @@ export const updateBotConfig: ReturnType<typeof mutation> = mutation({
       if (max_tokens !== undefined) updates.max_tokens = max_tokens;
     }
 
-    // Update the profile
-    await ctx.db.patch(profile._id, updates);
+    const before = profile;
+
+    let auditLogged = false;
+    try {
+      // Update the profile
+      await ctx.db.patch(profile._id, updates);
+
+      await logAudit(ctx, {
+        user_id: userId,
+        organization_id: profile.organization_id,
+        action: "update_bot_config",
+        resource_type: "botProfile",
+        resource_id: String(profile._id),
+        status: "success",
+        changes: {
+          before,
+          after: { ...before, ...updates },
+        },
+      });
+      auditLogged = true;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      if (!auditLogged) {
+        await logAudit(ctx, {
+          user_id: userId,
+          organization_id: profile.organization_id,
+          action: "update_bot_config",
+          resource_type: "botProfile",
+          resource_id: String(profile._id),
+          status: "error",
+          error_message: errorMessage,
+        });
+      }
+      throw error;
+    }
 
     return {
       success: true,
@@ -181,6 +247,13 @@ export const updateEscalationConfig: ReturnType<typeof mutation> = mutation({
   handler: async (ctx, args) => {
     const identity = await ctx.auth.getUserIdentity();
     if (!identity) {
+      await logAudit(ctx, {
+        user_id: "unauthenticated",
+        action: "update_escalation_config",
+        resource_type: "botProfile",
+        status: "denied",
+        error_message: "Unauthorized: Must be logged in",
+      });
       throw new Error("Unauthorized: Must be logged in");
     }
 
@@ -192,6 +265,15 @@ export const updateEscalationConfig: ReturnType<typeof mutation> = mutation({
       .first();
 
     if (!profile) {
+      await logAudit(ctx, {
+        user_id: userId,
+        organization_id: (identity.org_id as string | undefined) || undefined,
+        action: "update_escalation_config",
+        resource_type: "botProfile",
+        status: "error",
+        error_message:
+          "Bot profile not found. Visit Webchat → Bot Profile once to initialize your bot.",
+      });
       throw new Error(
         "Bot profile not found. Visit Webchat → Bot Profile once to initialize your bot.",
       );
@@ -210,14 +292,49 @@ export const updateEscalationConfig: ReturnType<typeof mutation> = mutation({
       }
     }
 
-    await ctx.db.patch(profile._id, {
+    const before = profile;
+    const patch = {
       escalation: {
         enabled: args.enabled,
         whatsapp: whatsappRaw,
         email: emailRaw,
       },
       updated_at: Date.now(),
-    });
+    };
+
+    let auditLogged = false;
+    try {
+      await ctx.db.patch(profile._id, patch);
+
+      await logAudit(ctx, {
+        user_id: userId,
+        organization_id: profile.organization_id,
+        action: "update_escalation_config",
+        resource_type: "botProfile",
+        resource_id: String(profile._id),
+        status: "success",
+        changes: {
+          before,
+          after: { ...before, ...patch },
+        },
+      });
+      auditLogged = true;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      if (!auditLogged) {
+        await logAudit(ctx, {
+          user_id: userId,
+          organization_id: profile.organization_id,
+          action: "update_escalation_config",
+          resource_type: "botProfile",
+          resource_id: String(profile._id),
+          status: "error",
+          error_message: errorMessage,
+        });
+      }
+      throw error;
+    }
 
     return { success: true, id: profile._id };
   },

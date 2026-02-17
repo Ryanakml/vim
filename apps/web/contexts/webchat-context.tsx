@@ -143,26 +143,32 @@ export function WebchatProvider({ children }: { children: ReactNode }) {
   // Update local state when botProfile is loaded from Convex
   useEffect(() => {
     if (botProfile) {
-      setDisplayName(botProfile.bot_names);
-      setDescription(botProfile.bot_description);
-      setPlaceholder(botProfile.msg_placeholder);
-      setPrimaryColor(botProfile.primary_color);
-      setAvatarUrl(botProfile.avatar_url);
-      setFont(botProfile.font);
-      setThemeMode(botProfile.theme_mode as "light" | "dark");
-      setHeaderStyle(botProfile.header_style as "basic" | "branded");
-      setMessageStyle(botProfile.message_style as "filled" | "outlined");
-      setCornerRadius(botProfile.corner_radius);
-      setEnableFeedback(botProfile.enable_feedback);
-      setEnableFileUpload(botProfile.enable_file_upload);
-      setEnableSound(botProfile.enable_sound);
-      setHistoryReset(botProfile.history_reset);
+      setDisplayName(botProfile.bot_names ?? "ChatBot");
+      setDescription(botProfile.bot_description ?? "");
+      setPlaceholder(botProfile.msg_placeholder ?? "Type a message...");
+      setPrimaryColor(botProfile.primary_color ?? "#000000");
+      setAvatarUrl(botProfile.avatar_url ?? "");
+      setFont(botProfile.font ?? "sans-serif");
+      setThemeMode((botProfile.theme_mode as "light" | "dark") ?? "light");
+      setHeaderStyle(
+        (botProfile.header_style as "basic" | "branded") ?? "basic",
+      );
+      setMessageStyle(
+        (botProfile.message_style as "filled" | "outlined") ?? "filled",
+      );
+      setCornerRadius(botProfile.corner_radius ?? 8);
+      setEnableFeedback(botProfile.enable_feedback ?? true);
+      setEnableFileUpload(botProfile.enable_file_upload ?? false);
+      setEnableSound(botProfile.enable_sound ?? true);
+      setHistoryReset(botProfile.history_reset ?? "on_reload");
     }
   }, [botProfile]);
 
   // Save profile to Convex
   const saveProfile = async () => {
-    if (!botProfile) throw new Error("Profile not loaded");
+    if (!botProfile || !botProfile._id) {
+      throw new Error("Profile not loaded");
+    }
     try {
       await updateBotProfile({
         id: botProfile._id,

@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { mutation } from "../../_generated/server.js";
 import { api } from "../../_generated/api.js";
-import type { Id } from "../../_generated/dataModel.js";
+import { requireValidVisitorSession, logAudit } from "../../lib/security.js";
 
 /**
  * PUBLIC MUTATION: End a public chat session
@@ -17,44 +17,51 @@ import type { Id } from "../../_generated/dataModel.js";
  */
 export const endSession = mutation({
   args: {
-    sessionId: v.string(),
-    organizationId: v.string(),
-    botId: v.string(),
-    visitorId: v.string(),
+    conversationId: v.string(),
+    sessionToken: v.string(),
   },
   handler: async (ctx, args): Promise<{ success: boolean }> => {
-    const session: {
-      _id: Id<"publicSessions">;
-      conversationId: Id<"conversations">;
-      organizationId: string;
-      botId: string;
-      visitorId: string;
-    } | null = await ctx.runQuery(api.public.getSessionDetails, {
-      sessionId: args.sessionId,
-      organizationId: args.organizationId,
-      botId: args.botId,
-      visitorId: args.visitorId,
-    });
-
-    if (!session) {
-      throw new Error(
-        "Session not found or does not belong to this organization/bot",
-      );
-    }
-
-    // ✅ UPDATE: Mark session as ended (don't delete for admin review)
-    await ctx.db.patch(session._id, {
-      status: "ended",
-      endedAt: new Date().toISOString(),
-    });
-
-    const conversation = await ctx.db.get(session.conversationId);
-    if (conversation && conversation.status !== "closed") {
-      await ctx.db.patch(session.conversationId, {
-        status: "closed",
-        updated_at: Date.now(),
+    const conversationId = ctx.db.normalizeId(
+      "conversations",
+      args.conversationId,
+    );
+    if (!conversationId) {
+      await logAudit(ctx, {
+        user_id: "unauthenticated",
+        action: "end_public_session",
+        resource_type: "conversation",
+        resource_id: args.conversationId,
+        status: "error",
+        error_message: "Conversation not found",
       });
+      throw new Error("Conversation not found");
     }
+
+    await ctx.runMutation(api.monitor.closeConversation, {
+      conversationId,
+      sessionToken: args.sessionToken,
+    });
+
+    const session = await requireValidVisitorSession(ctx, {
+      sessionToken: args.sessionToken,
+      now: Date.now(),
+    });
+
+    await ctx.db.patch(session._id, {
+      revoked: true,
+    });
+
+    await logAudit(ctx, {
+      user_id: `visitor:${session.visitor_id}`,
+      action: "end_public_session",
+      resource_type: "visitorSession",
+      resource_id: String(session._id),
+      status: "success",
+      changes: {
+        before: { _id: session._id, revoked: session.revoked },
+        after: { _id: session._id, revoked: true },
+      },
+    });
 
     return { success: true };
   },

@@ -3,31 +3,46 @@
 import { useMemo, useState } from "react";
 import { Copy, Image as ImageIcon } from "lucide-react";
 import { Button } from "@workspace/ui/components/button";
+import { Input } from "@workspace/ui/components/input";
 import { Switch } from "@workspace/ui/components/switch";
 import { cn } from "@workspace/ui/lib/utils";
-import { useBotProfile } from "@/lib/convex-client";
+import { useBotProfile, useGenerateEmbedToken } from "@/lib/convex-client";
 
-const DEFAULT_WIDGET_EMBED_SRC =
-  process.env.NEXT_PUBLIC_WIDGET_EMBED_SRC ??
-  "https://vim-widget.vercel.app/embed.js";
+const DEFAULT_WIDGET_URL =
+  process.env.NEXT_PUBLIC_WIDGET_URL ?? "https://vim-widget.vercel.app";
+
+function getEmbedScriptSrc(widgetUrl: string) {
+  const trimmed = widgetUrl.trim();
+  if (!trimmed) return "https://vim-widget.vercel.app/embed.js";
+
+  // FIX: Jika sudah berakhiran .js, jangan ditimpa/ditambah lagi
+  if (trimmed.endsWith(".js")) return trimmed;
+
+  // Default behavior untuk URL folder
+  return `${trimmed.replace(/\/$/, "")}/embed.js`;
+}
 
 export default function DeploySettingsPage() {
   const botProfile = useBotProfile();
+  const generateEmbedToken = useGenerateEmbedToken();
+
+  const [domain, setDomain] = useState("");
+  const [embedToken, setEmbedToken] = useState<string | null>(null);
+  const [isGenerating, setIsGenerating] = useState(false);
 
   const embedScript = useMemo(() => {
-    const organizationId = botProfile?.organization_id;
-    const botId = botProfile?._id;
+    const token = embedToken;
+    if (!token) return null;
 
-    if (!organizationId || !botId) return null;
+    const src = getEmbedScriptSrc(DEFAULT_WIDGET_URL);
 
     return `<script
-  src="${DEFAULT_WIDGET_EMBED_SRC}"
-  data-organization-id="${organizationId}"
-  data-bot-id="${botId}"
+  src="${src}"
+  data-token="${token}"
   data-position="bottom-right"
   async
 ></script>`;
-  }, [botProfile]);
+  }, [embedToken]);
 
   // --- STATE MANAGEMENT ---
   const [chatInterface, setChatInterface] = useState<"toggle" | "embedded">(
@@ -44,6 +59,21 @@ export default function DeploySettingsPage() {
     if (!embedScript) return;
     navigator.clipboard.writeText(embedScript);
     // Bisa tambah toast notification disini kalo mau
+  };
+
+  const handleGenerate = async () => {
+    if (!botProfile || !domain.trim()) return;
+
+    setIsGenerating(true);
+    try {
+      const result = await generateEmbedToken({
+        botId: botProfile._id,
+        domain: domain.trim(),
+      });
+      setEmbedToken(result.token);
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
   return (
@@ -78,6 +108,27 @@ export default function DeploySettingsPage() {
             </p>
           </div>
 
+          <div className="flex flex-col gap-3 md:flex-row md:items-center">
+            <div className="flex-1">
+              <Input
+                value={domain}
+                onChange={(e) => setDomain(e.target.value)}
+                placeholder="example.com or localhost:3000"
+                disabled={!botProfile || isGenerating}
+              />
+              <p className="mt-2 text-xs text-muted-foreground">
+                Token will be scoped to this domain
+              </p>
+            </div>
+            <Button
+              className="bg-blue-600 hover:bg-blue-700 text-white font-medium px-6"
+              onClick={handleGenerate}
+              disabled={!botProfile || !domain.trim() || isGenerating}
+            >
+              {isGenerating ? "Generating…" : "Generate Token"}
+            </Button>
+          </div>
+
           <div className="relative group">
             <div className="w-full rounded-lg border border-zinc-800 bg-zinc-950 p-6 font-mono text-sm text-zinc-300 leading-relaxed overflow-x-auto">
               {botProfile === undefined && (
@@ -92,8 +143,7 @@ export default function DeploySettingsPage() {
 
               {botProfile && !embedScript && (
                 <div className="text-zinc-400">
-                  Missing organization or bot ID. Make sure you are working
-                  inside a Clerk organization.
+                  Generate an embed token by entering a domain above.
                 </div>
               )}
 

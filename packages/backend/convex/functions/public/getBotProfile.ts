@@ -1,6 +1,9 @@
 import { v } from "convex/values";
 import { query } from "../../_generated/server.js";
-import { Id } from "../../_generated/dataModel.js";
+import {
+  requireBotProfile,
+  requireValidEmbedToken,
+} from "../../lib/security.js";
 
 /**
  * PUBLIC QUERY: Get bot profile for embed widget
@@ -16,17 +19,16 @@ import { Id } from "../../_generated/dataModel.js";
  */
 export const getBotProfile = query({
   args: {
-    organizationId: v.string(),
-    botId: v.string(),
+    token: v.string(),
+    currentDomain: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const botProfile = await ctx.db.get(args.botId as Id<"botProfiles">);
+    const embedToken = await requireValidEmbedToken(ctx, {
+      token: args.token,
+      currentDomain: args.currentDomain,
+    });
+    const botProfile = await requireBotProfile(ctx, embedToken.bot_id);
 
-    if (!botProfile || botProfile.organization_id !== args.organizationId) {
-      throw new Error("Bot not found or organization mismatch");
-    }
-
-    // ✅ RETURN: Full profile for widget configuration
     return {
       id: botProfile._id,
       organizationId: botProfile.organization_id,

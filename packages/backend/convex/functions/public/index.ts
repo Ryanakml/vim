@@ -6,6 +6,7 @@
  */
 
 export { getBotProfile } from "./getBotProfile.js";
+export { validateEmbedToken } from "./validateEmbedToken.js";
 export { createSession } from "./createSession.js";
 export { sendMessage } from "./sendMessage.js";
 export { getMessages } from "./getMessages.js";

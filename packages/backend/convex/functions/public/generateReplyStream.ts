@@ -10,10 +10,8 @@ import { api } from "../../_generated/api.js";
  */
 export const generateReplyStream = action({
   args: {
-    sessionId: v.string(),
-    organizationId: v.string(),
-    botId: v.string(),
-    visitorId: v.string(),
+    conversationId: v.string(),
+    sessionToken: v.string(),
     userMessage: v.string(),
   },
   handler: async (
@@ -26,33 +24,16 @@ export const generateReplyStream = action({
     provider?: string;
     error?: string;
   }> => {
-    const { sessionId, organizationId, botId, visitorId, userMessage } = args;
+    const { conversationId, sessionToken, userMessage } = args;
 
-    // Validate session
-    const session: {
-      _id: string;
-      conversationId: string;
-      organizationId: string;
-      botId: string;
-      visitorId: string;
-    } | null = await ctx.runQuery(api.public.getSessionDetails, {
-      sessionId,
-      organizationId,
-      botId,
-      visitorId,
+    const conversationStatus: {
+      exists: boolean;
+      isActive: boolean;
+      botId?: string;
+    } = await ctx.runQuery(api.public.getConversationStatus, {
+      conversationId,
+      sessionToken,
     });
-
-    if (!session) {
-      return {
-        success: false,
-        error: "Session validation failed - session not found or invalid",
-      };
-    }
-
-    const conversationStatus = await ctx.runQuery(
-      api.public.getConversationStatus,
-      { conversationId: session.conversationId },
-    );
 
     if (!conversationStatus.exists) {
       return { success: false, error: "Conversation not found" };
@@ -62,10 +43,14 @@ export const generateReplyStream = action({
       return { success: false, error: "Conversation is closed" };
     }
 
+    if (!conversationStatus.botId) {
+      return { success: false, error: "Conversation bot not found" };
+    }
+
     // Delegate to unified streaming generator
     return await ctx.runAction(api.ai.generateBotResponseStream, {
-      botId: botId as any,
-      conversationId: session.conversationId as any,
+      botId: conversationStatus.botId as any,
+      conversationId: conversationId as any,
       userMessage,
       integration: "widget",
     });

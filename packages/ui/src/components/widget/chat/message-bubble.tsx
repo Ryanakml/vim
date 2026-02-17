@@ -12,10 +12,10 @@ import { useState } from "react";
 import type { MessageBubbleProps } from "../types.ts";
 
 /**
- * MarkdownRenderer - Simple inline markdown support
- * For full markdown rendering, should be replaced with react-markdown
+ * Simple inline markdown support.
+ * Note: This intentionally does not render raw HTML.
  */
-function SimpleMarkdown({ content }: { content: string }) {
+function renderInlineMarkdown(content: string) {
   const tokens = content
     .split(/(\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g)
     .filter(Boolean);
@@ -43,6 +43,86 @@ function SimpleMarkdown({ content }: { content: string }) {
         return <span key={index}>{token}</span>;
       })}
     </>
+  );
+}
+
+type MessageBlock =
+  | { type: "paragraph"; text: string }
+  | { type: "list"; items: string[] };
+
+const LIST_ITEM_REGEX = /^\s*([-*•])\s+(.+)$/;
+
+function parseMessageBlocks(content: string): MessageBlock[] {
+  const normalized = content.replace(/\r\n?/g, "\n");
+  const lines = normalized.split("\n");
+
+  const blocks: MessageBlock[] = [];
+  let paragraphLines: string[] = [];
+  let listItems: string[] = [];
+
+  const flushParagraph = () => {
+    const text = paragraphLines.join("\n").trim();
+    if (text) blocks.push({ type: "paragraph", text });
+    paragraphLines = [];
+  };
+
+  const flushList = () => {
+    if (listItems.length > 0) blocks.push({ type: "list", items: listItems });
+    listItems = [];
+  };
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      flushList();
+      flushParagraph();
+      continue;
+    }
+
+    const listMatch = trimmed.match(LIST_ITEM_REGEX);
+    if (listMatch) {
+      flushParagraph();
+      listItems.push(listMatch[2] ?? "");
+      continue;
+    }
+
+    flushList();
+    paragraphLines.push(line);
+  }
+
+  flushList();
+  flushParagraph();
+  return blocks;
+}
+
+function FormattedMessage({ content }: { content: string }) {
+  const blocks = parseMessageBlocks(content);
+
+  return (
+    <div className="flex flex-col gap-2">
+      {blocks.map((block, index) => {
+        if (block.type === "list") {
+          return (
+            <ul key={`list-${index}`} className="list-disc pl-5 space-y-1">
+              {block.items.map((item, itemIndex) => (
+                <li
+                  key={`li-${index}-${itemIndex}`}
+                  className="whitespace-pre-wrap break-words"
+                >
+                  {renderInlineMarkdown(item)}
+                </li>
+              ))}
+            </ul>
+          );
+        }
+
+        return (
+          <p key={`p-${index}`} className="whitespace-pre-wrap break-words">
+            {renderInlineMarkdown(block.text)}
+          </p>
+        );
+      })}
+    </div>
   );
 }
 
@@ -297,7 +377,7 @@ export function MessageBubble({
                   }
           }
         >
-          <SimpleMarkdown content={cleanText} />
+          <FormattedMessage content={cleanText} />
         </div>
       </div>
 

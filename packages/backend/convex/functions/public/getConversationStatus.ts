@@ -1,5 +1,9 @@
 import { v } from "convex/values";
 import { query } from "../../_generated/server.js";
+import {
+  assertConversationOwnedByVisitorSession,
+  requireValidVisitorSession,
+} from "../../lib/security.js";
 
 /**
  * INTERNAL HELPER QUERY: Check conversation status
@@ -15,17 +19,41 @@ import { query } from "../../_generated/server.js";
 export const getConversationStatus = query({
   args: {
     conversationId: v.string(),
+    sessionToken: v.string(),
   },
   handler: async (ctx, args) => {
-    const conversation = await ctx.db.get(args.conversationId as any);
+    const conversationId = ctx.db.normalizeId(
+      "conversations",
+      args.conversationId,
+    );
+    if (!conversationId) {
+      return { exists: false, isActive: false };
+    }
+
+    const conversation = await ctx.db.get(conversationId);
 
     if (!conversation) {
+      return { exists: false, isActive: false };
+    }
+
+    try {
+      const session = await requireValidVisitorSession(ctx, {
+        sessionToken: args.sessionToken,
+        now: Date.now(),
+      });
+
+      await assertConversationOwnedByVisitorSession(ctx, {
+        conversation,
+        session,
+      });
+    } catch {
       return { exists: false, isActive: false };
     }
 
     return {
       exists: true,
       isActive: (conversation as any).status !== "closed",
+      botId: String(conversation.bot_id),
     };
   },
 });

@@ -15,8 +15,11 @@ import {
   checkRobotsTxt,
   scrapeWebsite,
   validateWebsiteUrl,
+  crawlWebsitePages,
+  type PageMetadata,
 } from "./websitescraper.js";
 import { calculateOptimalChunkSize, chunkDocument } from "./documentchunker.js";
+import { logAudit } from "./lib/security.js";
 
 type SourceMetadata = {
   filename?: string;
@@ -141,12 +144,48 @@ export const insertKnowledge = internalMutation({
     embedding: v.array(v.float64()),
   },
   handler: async (ctx, args): Promise<Id<"documents">> => {
-    return await ctx.db.insert("documents", {
-      user_id: args.user_id,
-      botId: args.botId,
-      text: args.text,
-      embedding: args.embedding,
-    });
+    const bot = await ctx.db.get(args.botId);
+    let auditLogged = false;
+    try {
+      const id = await ctx.db.insert("documents", {
+        user_id: args.user_id,
+        botId: args.botId,
+        text: args.text,
+        embedding: args.embedding,
+      });
+
+      await logAudit(ctx, {
+        user_id: args.user_id,
+        organization_id: bot?.organization_id,
+        action: "insert_document",
+        resource_type: "document",
+        resource_id: String(id),
+        status: "success",
+        changes: {
+          before: null,
+          after: {
+            botId: args.botId,
+            chars: args.text.length,
+          },
+        },
+      });
+      auditLogged = true;
+      return id;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      if (!auditLogged) {
+        await logAudit(ctx, {
+          user_id: args.user_id,
+          organization_id: bot?.organization_id,
+          action: "insert_document",
+          resource_type: "document",
+          status: "error",
+          error_message: errorMessage,
+        });
+      }
+      throw error;
+    }
   },
 });
 
@@ -160,14 +199,51 @@ export const insertKnowledgeWithMetadata = internalMutation({
     source_metadata: sourceMetadataValidator,
   },
   handler: async (ctx, args): Promise<Id<"documents">> => {
-    return await ctx.db.insert("documents", {
-      user_id: args.user_id,
-      botId: args.botId,
-      text: args.text,
-      embedding: args.embedding,
-      source_type: args.source_type,
-      source_metadata: args.source_metadata,
-    });
+    const bot = await ctx.db.get(args.botId);
+    let auditLogged = false;
+    try {
+      const id = await ctx.db.insert("documents", {
+        user_id: args.user_id,
+        botId: args.botId,
+        text: args.text,
+        embedding: args.embedding,
+        source_type: args.source_type,
+        source_metadata: args.source_metadata,
+      });
+
+      await logAudit(ctx, {
+        user_id: args.user_id,
+        organization_id: bot?.organization_id,
+        action: "insert_document",
+        resource_type: "document",
+        resource_id: String(id),
+        status: "success",
+        changes: {
+          before: null,
+          after: {
+            botId: args.botId,
+            source_type: args.source_type,
+            chars: args.text.length,
+          },
+        },
+      });
+      auditLogged = true;
+      return id;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      if (!auditLogged) {
+        await logAudit(ctx, {
+          user_id: args.user_id,
+          organization_id: bot?.organization_id,
+          action: "insert_document",
+          resource_type: "document",
+          status: "error",
+          error_message: errorMessage,
+        });
+      }
+      throw error;
+    }
   },
 });
 
@@ -538,7 +614,49 @@ export const deleteDocumentInternal = internalMutation({
     documentId: v.id("documents"),
   },
   handler: async (ctx, args) => {
-    await ctx.db.delete(args.documentId);
+    const before = await ctx.db.get(args.documentId);
+    const bot = before ? await ctx.db.get(before.botId) : null;
+    const auditUserId = before?.user_id ?? "system";
+
+    let auditLogged = false;
+    try {
+      await ctx.db.delete(args.documentId);
+
+      await logAudit(ctx, {
+        user_id: auditUserId,
+        organization_id: bot?.organization_id,
+        action: "delete_document",
+        resource_type: "document",
+        resource_id: String(args.documentId),
+        status: "success",
+        changes: {
+          before: before
+            ? {
+                _id: before._id,
+                botId: before.botId,
+                source_type: before.source_type,
+              }
+            : null,
+          after: null,
+        },
+      });
+      auditLogged = true;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      if (!auditLogged) {
+        await logAudit(ctx, {
+          user_id: auditUserId,
+          organization_id: bot?.organization_id,
+          action: "delete_document",
+          resource_type: "document",
+          resource_id: String(args.documentId),
+          status: "error",
+          error_message: errorMessage,
+        });
+      }
+      throw error;
+    }
   },
 });
 
@@ -605,9 +723,236 @@ export const updateDocumentInternal = internalMutation({
     embedding: v.array(v.float64()),
   },
   handler: async (ctx, args) => {
-    await ctx.db.patch(args.documentId, {
-      text: args.text,
-      embedding: args.embedding,
-    });
+    const before = await ctx.db.get(args.documentId);
+    const bot = before ? await ctx.db.get(before.botId) : null;
+    const auditUserId = before?.user_id ?? "system";
+
+    let auditLogged = false;
+    try {
+      await ctx.db.patch(args.documentId, {
+        text: args.text,
+        embedding: args.embedding,
+      });
+
+      await logAudit(ctx, {
+        user_id: auditUserId,
+        organization_id: bot?.organization_id,
+        action: "update_document",
+        resource_type: "document",
+        resource_id: String(args.documentId),
+        status: "success",
+        changes: {
+          before: before
+            ? {
+                _id: before._id,
+                botId: before.botId,
+                source_type: before.source_type,
+                chars: before.text?.length ?? 0,
+              }
+            : null,
+          after: {
+            _id: args.documentId,
+            chars: args.text.length,
+          },
+        },
+      });
+      auditLogged = true;
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error ? error.message : String(error);
+      if (!auditLogged) {
+        await logAudit(ctx, {
+          user_id: auditUserId,
+          organization_id: bot?.organization_id,
+          action: "update_document",
+          resource_type: "document",
+          resource_id: String(args.documentId),
+          status: "error",
+          error_message: errorMessage,
+        });
+      }
+      throw error;
+    }
+  },
+});
+
+/**
+ * Crawl a website to discover all pages and return metadata
+ * Used in the first step of the multi-page KB ingestion flow
+ */
+export const crawlWebsiteMeta = action({
+  args: {
+    url: v.string(),
+    maxPages: v.optional(v.number()),
+    maxDepth: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthorized: Must be logged in");
+    }
+
+    const urlValidation = validateWebsiteUrl(args.url);
+    if (!urlValidation.valid) {
+      throw new Error(urlValidation.error ?? "Invalid URL");
+    }
+
+    const robotsAllowed = await checkRobotsTxt(args.url);
+    if (!robotsAllowed) {
+      throw new Error(
+        "Website robots.txt disallows scraping. Please contact the site owner.",
+      );
+    }
+
+    const crawlResult = await crawlWebsitePages(
+      args.url,
+      args.maxPages ?? 100,
+      args.maxDepth ?? 3,
+    );
+
+    if (crawlResult.error) {
+      throw new Error(crawlResult.error);
+    }
+
+    return crawlResult;
+  },
+});
+
+/**
+ * Scrape multiple website pages and add them as knowledge
+ * Used in the final step of the multi-page KB ingestion flow
+ */
+export const scrapeMultipleWebsitesAndAddKnowledge = action({
+  args: {
+    botId: v.id("botProfiles"),
+    urls: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthorized: Must be logged in");
+    }
+
+    if (args.urls.length === 0) {
+      throw new Error("No URLs provided");
+    }
+
+    if (args.urls.length > 50) {
+      throw new Error("Maximum 50 URLs allowed per batch");
+    }
+
+    const allAddedIds: Array<Id<"documents">> = [];
+    const errors: Array<{ url: string; error: string }> = [];
+    const processingTimestamp = Date.now();
+
+    // Process URLs concurrently with rate limiting (max 3 concurrent)
+    const batchSize = 3;
+    for (let i = 0; i < args.urls.length; i += batchSize) {
+      const batch = args.urls.slice(i, i + batchSize);
+
+      const results = await Promise.all(
+        batch.map(async (url) => {
+          try {
+            // Validate URL
+            const urlValidation = validateWebsiteUrl(url);
+            if (!urlValidation.valid) {
+              return {
+                success: false,
+                url,
+                error: urlValidation.error ?? "Invalid URL",
+                ids: [] as Array<Id<"documents">>,
+              };
+            }
+
+            // Scrape the page
+            const scrapeResult = await scrapeWebsite(url, 15000);
+
+            if (scrapeResult.metadata.content_size === 0) {
+              return {
+                success: false,
+                url,
+                error: "Website contains no extractable content",
+                ids: [] as Array<Id<"documents">>,
+              };
+            }
+
+            // Chunk and add to knowledge
+            const optimalChunkSize = calculateOptimalChunkSize(
+              scrapeResult.text,
+            );
+            const chunks = chunkDocument(scrapeResult.text, optimalChunkSize);
+            const addedIds: Array<Id<"documents">> = [];
+
+            for (const chunk of chunks) {
+              const metadata: SourceMetadata = {
+                url,
+                domain: scrapeResult.metadata.domain,
+                scrape_timestamp: processingTimestamp,
+                is_dynamic_content: scrapeResult.metadata.is_dynamic_content,
+                original_size_chars: chunk.original_size,
+                chunk_index: chunk.chunk_index,
+                chunk_total: chunk.chunk_total,
+                processing_timestamp: processingTimestamp,
+              };
+
+              const embedding: number[] = await ctx.runAction(
+                internal.knowledge.generateEmbedding,
+                {
+                  botId: args.botId,
+                  text: chunk.text,
+                },
+              );
+
+              const id = await ctx.runMutation(
+                internal.knowledge.insertKnowledgeWithMetadata,
+                {
+                  user_id: identity.subject,
+                  botId: args.botId,
+                  text: chunk.text,
+                  embedding,
+                  source_type: "website",
+                  source_metadata: metadata,
+                },
+              );
+
+              addedIds.push(id);
+            }
+
+            return {
+              success: true,
+              url,
+              ids: addedIds,
+              error: null,
+            };
+          } catch (error) {
+            return {
+              success: false,
+              url,
+              error:
+                error instanceof Error
+                  ? error.message
+                  : "Unknown error occurred",
+              ids: [] as Array<Id<"documents">>,
+            };
+          }
+        }),
+      );
+
+      // Collect results
+      for (const result of results) {
+        if (result.success) {
+          allAddedIds.push(...result.ids);
+        } else if (result.error) {
+          errors.push({ url: result.url, error: result.error });
+        }
+      }
+    }
+
+    return {
+      added_document_ids: allAddedIds,
+      total_documents_added: allAddedIds.length,
+      errors,
+      success: allAddedIds.length > 0,
+    };
   },
 });

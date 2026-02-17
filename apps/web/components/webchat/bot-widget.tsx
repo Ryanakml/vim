@@ -72,7 +72,7 @@ export function BotWidget({ className }: BotWidgetProps) {
 
       try {
         setIsLoadingSession(true);
-        const session = await createOrGetSession({ botId: botProfile._id });
+        const session = await createOrGetSession({ botId: botProfile._id! });
         if (session) {
           const id = typeof session === "string" ? session : session._id;
           setSessionId(id);
@@ -146,7 +146,7 @@ export function BotWidget({ className }: BotWidgetProps) {
     try {
       // Add user message to database
       await addPlaygroundMessage({
-        botId: botProfile._id,
+        botId: botProfile._id!,
         role: "user",
         content: userContent,
       });
@@ -161,7 +161,7 @@ export function BotWidget({ className }: BotWidgetProps) {
 
         try {
           // Start streaming - this will populate chunks in real-time
-          await startStream(botProfile._id, sessionId, userContent);
+          await startStream(botProfile._id!, sessionId, userContent);
 
           // Stream completed successfully - response is now in database
           console.log("[handleSend] Streaming completed successfully");
@@ -189,7 +189,7 @@ export function BotWidget({ className }: BotWidgetProps) {
 
         // Generate AI response using the unified AI engine
         await generateBotResponse({
-          botId: botProfile._id,
+          botId: botProfile._id!,
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           conversationId: sessionId as any,
           userMessage: userContent,
@@ -216,7 +216,7 @@ export function BotWidget({ className }: BotWidgetProps) {
 
     try {
       setIsLoadingSession(true);
-      const newSessionId = await restartSession({ botId: botProfile._id });
+      const newSessionId = await restartSession({ botId: botProfile._id! });
       setSessionId(newSessionId);
       setDbMessages([]); // Clear DB messages when restarting session
       setStreamingMessageId(null); // Clear any streaming state
@@ -277,10 +277,10 @@ export function BotWidget({ className }: BotWidgetProps) {
 
   // Create mock session for shared component
   const session: ChatSession = {
-    id: sessionId || "preview-session",
+    sessionToken: "preview-session-token",
+    conversationId: sessionId || "preview-conversation",
     organizationId: "web-app",
     botId: botProfile?._id || "preview",
-    visitorId: "admin-test",
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),
   };

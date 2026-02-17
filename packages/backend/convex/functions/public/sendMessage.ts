@@ -2,21 +2,7 @@ import { v } from "convex/values";
 import { mutation } from "../../_generated/server.js";
 import { api } from "../../_generated/api.js";
 import type { Id } from "../../_generated/dataModel.js";
-
-// Helper function to format visitor name consistently
-function formatAnonymousVisitorName(visitorId?: string): string {
-  if (!visitorId) {
-    return "anonymousid_unknown";
-  }
-  // FNV-1a 32-bit hash
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < visitorId.length; i += 1) {
-    hash ^= visitorId.charCodeAt(i);
-    hash = (hash * 0x01000193) >>> 0;
-  }
-  const hex = hash.toString(16).padStart(8, "0");
-  return `anonymousid_${hex.slice(0, 8)}`;
-}
+import { requireValidVisitorSession, logAudit } from "../../lib/security.js";
 
 /**
  * PUBLIC MUTATION: Send a message in a public chat session
@@ -29,98 +15,65 @@ function formatAnonymousVisitorName(visitorId?: string): string {
  *
  * Used by: Public widget during chat interaction
  * Access: public (no auth required)
- * Parameters: sessionId, organizationId, botId, visitorId (implicit), content
+ * Parameters: conversationId, sessionToken, content
  * Returns: Message ID or { success: true, messageId }
  */
 export const sendMessage = mutation({
   args: {
-    sessionId: v.string(), // v.id("publicSessions") - but client doesn't know Convex types
-    organizationId: v.string(),
-    botId: v.string(),
-    visitorId: v.string(),
+    conversationId: v.string(),
+    sessionToken: v.string(),
     content: v.string(),
   },
   handler: async (
     ctx,
     args,
   ): Promise<{ success: true; messageId: Id<"messages"> }> => {
-    const session: {
-      _id: Id<"publicSessions">;
-      conversationId: Id<"conversations">;
-      organizationId: string;
-      botId: string;
-      visitorId: string;
-    } | null = await ctx.runQuery(api.public.getSessionDetails, {
-      sessionId: args.sessionId,
-      organizationId: args.organizationId,
-      botId: args.botId,
-      visitorId: args.visitorId,
-    });
-
-    if (!session) {
-      throw new Error(
-        "Session not found or does not match provided organization/bot/visitor",
-      );
-    }
-
-    // ✅ VALIDATION 2: Verify conversation still exists
-    const conversation = await ctx.db.get(session.conversationId);
-    if (!conversation) {
+    const conversationId = ctx.db.normalizeId(
+      "conversations",
+      args.conversationId,
+    );
+    if (!conversationId) {
+      await logAudit(ctx, {
+        user_id: "unauthenticated",
+        action: "public_send_message",
+        resource_type: "conversation",
+        resource_id: args.conversationId,
+        status: "error",
+        error_message: "Conversation not found",
+      });
       throw new Error("Conversation not found");
     }
 
-    // ✅ VALIDATION 3: Verify conversation is not closed
-    if (conversation.status === "closed") {
-      throw new Error("Conversation is closed");
-    }
-
-    // ✅ AUTO-CREATE/UPDATE USER for visitor
-    // Check if user already exists for this visitor in this organization
-    const existingUser = await ctx.db
-      .query("users")
-      .withIndex("by_org_and_identifier", (q) =>
-        q
-          .eq("organization_id", args.organizationId)
-          .eq("identifier", args.visitorId),
-      )
-      .first();
-
-    const now = Date.now();
-    const userName = formatAnonymousVisitorName(args.visitorId);
-
-    if (existingUser) {
-      // Update last_active_at
-      await ctx.db.patch(existingUser._id, {
-        last_active_at: now,
-      });
-    } else {
-      // Create new user record
-      await ctx.db.insert("users", {
-        organization_id: args.organizationId,
-        identifier: args.visitorId,
-        name: userName,
-        created_at: now,
-        last_active_at: now,
-      });
-    }
-
-    // ✅ SAVE: User message
-    const userMessageId = await ctx.db.insert("messages", {
-      conversation_id: session.conversationId,
-      visitor_id: args.visitorId,
-      role: "user",
-      content: args.content,
-      created_at: Date.now(),
-      user_id: undefined, // Public visitor, no user_id
+    const session = await requireValidVisitorSession(ctx, {
+      sessionToken: args.sessionToken,
+      now: Date.now(),
     });
 
-    // ✅ TODO: Delegate to AI response handler (phase 4+)
-    // This will:
-    // - Fetch bot config
-    // - Get conversation history
-    // - Call AI provider
-    // - Save bot response
-    // - Log metrics
+    const userMessageId: Id<"messages"> = await ctx.runMutation(
+      api.monitor.addMessage,
+      {
+        conversation_id: conversationId,
+        role: "user",
+        content: args.content,
+        sessionToken: args.sessionToken,
+      },
+    );
+
+    await logAudit(ctx, {
+      user_id: `visitor:${session.visitor_id}`,
+      organization_id: (session as any).organization_id as string | undefined,
+      action: "public_send_message",
+      resource_type: "message",
+      resource_id: String(userMessageId),
+      status: "success",
+      changes: {
+        before: null,
+        after: {
+          conversationId: String(conversationId),
+          messageId: String(userMessageId),
+        },
+      },
+    });
 
     return {
       success: true,
