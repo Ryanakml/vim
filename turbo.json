@@ -3,7 +3,9 @@
   "ui": "tui",
   "globalDependencies": ["**/.env.*local"],
   "globalEnv": [
+    "API_KEY_ENCRYPTION_SECRET",
     "CLERK_SECRET_KEY",
+    "CONVEX_SERVER_SHARED_SECRET",
     "CONVEX_DEPLOYMENT",
     "NEXT_PUBLIC_CONVEX_URL",
     "NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY",
