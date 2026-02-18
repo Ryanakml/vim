@@ -38,6 +38,8 @@ interface BotProfileResponse {
   const token = scriptTag.getAttribute("data-token");
   const position = (scriptTag.getAttribute("data-position") ||
     "bottom-right") as EmbedConfig["position"];
+  const initialPrimaryColorAttr = scriptTag.getAttribute("data-primary-color");
+  const initialCornerRadiusAttr = scriptTag.getAttribute("data-corner-radius");
 
   if (!token) {
     console.error("Chatify: Missing data-token attribute");
@@ -52,7 +54,7 @@ interface BotProfileResponse {
   const WIDGET_URL =
     globalThis.__WIDGET_URL__ ||
     process.env.WIDGET_URL ||
-    "https://vim-widget.vercel.app";
+    "widget.chattiphy.nextstackhq.app";
   const VISITOR_STORAGE_KEY = "chatify_visitor_id";
   const VISITOR_CREATED_AT_KEY = "chatify_visitor_id_createdAt";
   const DEFAULT_PRIMARY_COLOR = "#6366f1";
@@ -116,6 +118,12 @@ interface BotProfileResponse {
     }
 
     return storedVisitorId;
+  }
+
+  function parseCornerRadius(value: string | null): number | undefined {
+    if (!value) return undefined;
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : undefined;
   }
 
   /**
@@ -340,19 +348,20 @@ interface BotProfileResponse {
         border-radius: 16px !important;
         box-shadow: 0 8px 48px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.06) !important;
         overflow: hidden !important;
-        display: none !important;
+        visibility: hidden !important;
         opacity: 0 !important;
         transform: translateY(12px) scale(0.97) !important;
         transition: all 0.3s ease-out !important;
-        pointer-events: auto !important;
+        pointer-events: none !important;
         z-index: 999998 !important;
       }
 
       /* CONTAINER: Open state (animated) */
       #chatify-container.active {
-        display: block !important;
+        visibility: visible !important;
         opacity: 1 !important;
         transform: translateY(0) scale(1) !important;
+        pointer-events: auto !important;
       }
 
       /* IFRAME: Inside container */
@@ -407,7 +416,7 @@ interface BotProfileResponse {
     iframe.id = "chatify-iframe";
     iframe.src = `${WIDGET_URL}/widget?token=${encodeURIComponent(embedToken)}&visitorId=${encodeURIComponent(getVisitorId())}`;
     iframe.allow = "camera; microphone";
-    iframe.setAttribute("loading", "lazy");
+    iframe.setAttribute("loading", "eager");
     iframe.setAttribute("title", "Chatify Chat Widget");
 
     container.appendChild(iframe);
@@ -418,6 +427,18 @@ interface BotProfileResponse {
     // ═══════════════════════════════════════════════════════════════════
     let isWidgetOpen = false;
     let currentPrimaryColor = DEFAULT_PRIMARY_COLOR;
+    let launcherVisible = false;
+
+    function showLauncher() {
+      if (launcherVisible) return;
+      button.style.setProperty("display", "flex", "important");
+      launcherVisible = true;
+    }
+
+    function hideLauncher() {
+      button.style.setProperty("display", "none", "important");
+      launcherVisible = false;
+    }
 
     function applyCornerRadius(cornerRadius?: number) {
       if (typeof cornerRadius !== "number" || Number.isNaN(cornerRadius)) {
@@ -427,6 +448,19 @@ interface BotProfileResponse {
       const radiusValue = `${safeRadius}px`;
       container.style.setProperty("border-radius", radiusValue, "important");
       iframe.style.setProperty("border-radius", radiusValue, "important");
+    }
+
+    hideLauncher();
+
+    if (initialPrimaryColorAttr) {
+      currentPrimaryColor = initialPrimaryColorAttr;
+      button.style.setProperty("background", currentPrimaryColor, "important");
+      showLauncher();
+    }
+
+    const initialCornerRadius = parseCornerRadius(initialCornerRadiusAttr);
+    if (initialCornerRadius != null) {
+      applyCornerRadius(initialCornerRadius);
     }
 
     function openWidget() {
@@ -481,6 +515,7 @@ interface BotProfileResponse {
             currentPrimaryColor,
             "important",
           );
+          showLauncher();
         }
         if (data.data.cornerRadius != null) {
           applyCornerRadius(data.data.cornerRadius);
@@ -497,6 +532,7 @@ interface BotProfileResponse {
             currentPrimaryColor,
             "important",
           );
+          showLauncher();
         }
 
         // Apply dynamic corner radius to container and iframe

@@ -36,13 +36,25 @@ export default function DeploySettingsPage() {
 
     const src = getEmbedScriptSrc(DEFAULT_WIDGET_URL);
 
+    const attrs = [
+      `src="${src}"`,
+      `data-token="${token}"`,
+      `data-position="bottom-right"`,
+    ];
+
+    if (botProfile?.primary_color) {
+      attrs.push(`data-primary-color="${botProfile.primary_color}"`);
+    }
+
+    if (typeof botProfile?.corner_radius === "number") {
+      attrs.push(`data-corner-radius="${botProfile.corner_radius}"`);
+    }
+
     return `<script
-  src="${src}"
-  data-token="${token}"
-  data-position="bottom-right"
+  ${attrs.join("\n  ")}
   async
 ></script>`;
-  }, [embedToken]);
+  }, [embedToken, botProfile]);
 
   // --- STATE MANAGEMENT ---
   const [chatInterface, setChatInterface] = useState<"toggle" | "embedded">(

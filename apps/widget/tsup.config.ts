@@ -8,7 +8,7 @@ export default defineConfig({
   clean: true,
   define: {
     "globalThis.__WIDGET_URL__": JSON.stringify(
-      "https://vim-widget.vercel.app/",
+      "https://widget.chattiphy.nextstackhq.app/",
     ),
   },
 });

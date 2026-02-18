@@ -4,7 +4,6 @@ import { Suspense, useEffect, useState, useCallback } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   ChatContainer,
-  ChatSkeleton,
   type BotConfig,
   type Message,
   type ChatSession,
@@ -261,17 +260,23 @@ function WidgetContent() {
     );
   }
 
-  // Loading state — show skeleton that matches final layout
+  // Loading state — simple spinner while waiting for config
   if (!botConfig) {
     return (
       <div
         suppressHydrationWarning
         className={hydratedTheme === "dark" ? "dark" : ""}
+        style={{ height: "100%", width: "100%" }}
       >
-        <ChatSkeleton
-          primaryColor="#6366f1"
-          themeMode={hydratedTheme === "dark" ? "dark" : "light"}
-        />
+        <div
+          className="flex h-full w-full items-center justify-center"
+          style={{ backgroundColor: "#FFFFFF" }}
+        >
+          <div className="flex items-center gap-3 text-sm text-zinc-600">
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-600" />
+            <span>Loading chat...</span>
+          </div>
+        </div>
       </div>
     );
   }
@@ -302,7 +307,14 @@ function WidgetContent() {
 export default function WidgetPage() {
   return (
     <Suspense
-      fallback={<ChatSkeleton primaryColor="#6366f1" themeMode="light" />}
+      fallback={
+        <div className="flex h-full w-full items-center justify-center">
+          <div className="flex items-center gap-3 text-sm text-zinc-600">
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-zinc-300 border-t-zinc-600" />
+            <span>Loading chat...</span>
+          </div>
+        </div>
+      }
     >
       <WidgetContent />
     </Suspense>
