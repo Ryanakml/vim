@@ -9,11 +9,12 @@ import { cn } from "@workspace/ui/lib/utils";
 import { useBotProfile, useGenerateEmbedToken } from "@/lib/convex-client";
 
 const DEFAULT_WIDGET_URL =
-  process.env.NEXT_PUBLIC_WIDGET_URL ?? "https://vim-widget.vercel.app";
+  process.env.NEXT_PUBLIC_WIDGET_URL ??
+  "https://widget.chattiphy.nextstackhq.app";
 
 function getEmbedScriptSrc(widgetUrl: string) {
   const trimmed = widgetUrl.trim();
-  if (!trimmed) return "https://vim-widget.vercel.app/embed.js";
+  if (!trimmed) return "https://widget.chattiphy.nextstackhq.app/embed.js";
 
   // FIX: Jika sudah berakhiran .js, jangan ditimpa/ditambah lagi
   if (trimmed.endsWith(".js")) return trimmed;
