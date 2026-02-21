@@ -9,6 +9,7 @@ import {
 import { ScrollArea } from "@workspace/ui/components/scroll-area";
 import { Loader2 } from "lucide-react";
 import { MessageBubble } from "./message-bubble";
+import { sanitizeAssistantMessage } from "./message-sanitizer";
 import type { ChatMessagesProps } from "../types.ts";
 
 /**
@@ -20,6 +21,7 @@ export function ChatMessages({
   messages,
   primaryColor,
   botName,
+  botDescription,
   botAvatar,
   themeMode,
   cornerRadius,
@@ -33,6 +35,10 @@ export function ChatMessages({
   onFeedback,
   onLeadClick,
 }: ChatMessagesProps) {
+  const sanitizedStreamingContent = streamingContent
+    ? sanitizeAssistantMessage(streamingContent)
+    : "";
+
   const contentSubBgColor =
     themeMode === "light" ? "bg-zinc-50/50" : "bg-zinc-800/50";
   const textSecondaryColor =
@@ -79,9 +85,16 @@ export function ChatMessages({
                   {botName.charAt(0).toUpperCase()}
                 </AvatarFallback>
               </Avatar>
-              <p className={cn("text-xs font-medium", textSecondaryColor)}>
-                Powered by Chatify
-              </p>
+              {botDescription && (
+                <p
+                  className={cn(
+                    "text-xs font-medium text-center max-w-[220px] line-clamp-2",
+                    textSecondaryColor,
+                  )}
+                >
+                  {botDescription}
+                </p>
+              )}
             </div>
           )}
 
@@ -103,7 +116,7 @@ export function ChatMessages({
           ))}
 
           {/* Streaming message */}
-          {isStreaming && streamingContent && (
+          {isStreaming && sanitizedStreamingContent && (
             <div className="flex justify-start">
               <div
                 className="max-w-[80%] px-4 py-2.5 rounded-2xl rounded-tl-sm border"
@@ -117,7 +130,7 @@ export function ChatMessages({
                 }}
               >
                 <p className="text-sm leading-relaxed break-words whitespace-pre-wrap">
-                  {streamingContent}
+                  {sanitizedStreamingContent}
                 </p>
               </div>
             </div>

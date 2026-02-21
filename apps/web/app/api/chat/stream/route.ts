@@ -58,6 +58,21 @@ function responseAlreadyContainsEscalation(
 
 /** Regex to strip any leaked tool-name text the AI might emit. */
 const TOOL_LEAK_RE = /trigger_escalation/gi;
+const FUNCTION_BLOCK_TAG_REGEX =
+  /<function(?:\s*=\s*["']?[^>"'\s]*["']?)?\s*>[\s\S]*?<\/function>/gi;
+const FUNCTION_SELF_CLOSING_TAG_REGEX =
+  /<function(?:\s*=\s*["']?[^>"'\s]*["']?)?\s*\/>/gi;
+const FUNCTION_OPEN_CLOSE_TAG_REGEX =
+  /<\/?function(?:\s*=\s*["']?[^>"'\s]*["']?)?\s*>/gi;
+
+function sanitizeStreamOutput(rawText: string) {
+  return rawText
+    .replace(FUNCTION_BLOCK_TAG_REGEX, "")
+    .replace(FUNCTION_SELF_CLOSING_TAG_REGEX, "")
+    .replace(FUNCTION_OPEN_CLOSE_TAG_REGEX, "")
+    .replace(TOOL_LEAK_RE, "")
+    .replace(/[ \t]{2,}/g, " ");
+}
 
 /** Default bridge sentence when escalation fires but text is empty/short. */
 const DEFAULT_BRIDGE_TEXT =
@@ -337,33 +352,24 @@ export async function POST(request: NextRequest) {
             for await (const textChunk of textStream as AsyncIterable<string>) {
               chunkNum++;
 
-              // Detect leaked tool name in this chunk
-              if (TOOL_LEAK_RE.test(textChunk)) {
+              const cleanedChunk = sanitizeStreamOutput(textChunk);
+              if (cleanedChunk !== textChunk) {
                 toolNameLeaked = true;
-                // Strip the tool name from the chunk; skip sending if empty
-                const cleaned = textChunk
-                  .replace(TOOL_LEAK_RE, "")
-                  .replace(/\s{2,}/g, " ");
-                if (cleaned.length > 0) {
-                  fullResponseText += cleaned;
-                  const event = `data: ${JSON.stringify({
-                    type: "text-delta",
-                    delta: cleaned,
-                  })}\n\n`;
-                  controller.enqueue(encoder.encode(event));
-                }
-                continue; // skip the original chunk
+              }
+
+              if (!cleanedChunk.trim()) {
+                continue;
               }
 
               // Collect for database save
-              fullResponseText += textChunk;
+              fullResponseText += cleanedChunk;
 
               console.log(
-                `[stream] 📤 Streaming chunk #${chunkNum}: "${textChunk.slice(0, 50)}"`,
+                `[stream] 📤 Streaming chunk #${chunkNum}: "${cleanedChunk.slice(0, 50)}"`,
               );
               const event = `data: ${JSON.stringify({
                 type: "text-delta",
-                delta: textChunk,
+                delta: cleanedChunk,
               })}\n\n`;
               const encoded = encoder.encode(event);
               console.log(
@@ -386,6 +392,8 @@ export async function POST(request: NextRequest) {
                   (tc) => tc.toolName === "trigger_escalation",
                 ),
             );
+
+            fullResponseText = sanitizeStreamOutput(fullResponseText).trim();
 
             if (
               (escalationToolCalled || toolNameLeaked) &&

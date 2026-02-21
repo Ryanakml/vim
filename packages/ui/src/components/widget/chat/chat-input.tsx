@@ -148,13 +148,13 @@ export function ChatInput({
         </div>
       </form>
 
-      {/* Powered by Chatify */}
+      {/* Powered by Chattiphy */}
       <div
         className="mt-3 flex items-center justify-center gap-1.5 text-[10px] font-medium"
         style={{ color: themeMode === "light" ? "#4B5563" : "#FFFFFF" }}
       >
         <span className="text-yellow-500">⚡</span>
-        <span>Powered by Chatify</span>
+        <span>Powered by Chattiphy</span>
       </div>
     </div>
   );

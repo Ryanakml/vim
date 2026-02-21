@@ -3,8 +3,10 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 // Public routes that don't require authentication
 // Clerk handles signin/signup with hosted pages - removed from here
 const isPublicRoute = createRouteMatcher([
+  "/", // Landing page
   "/api(.*)", // API routes handled separately
-  "/", // Home page - will redirect based on auth status
+  "/signin(.*)", // Clerk sign-in route and children
+  "/signup(.*)", // Clerk sign-up route and children
   "/sso-callback(.*)", // SSO callback route
   "/widget-demo(.*)", // Widget demo (public)
 ]);

@@ -10,6 +10,7 @@ import { Button } from "@workspace/ui/components/button";
 import { ThumbsDown, ThumbsUp } from "lucide-react";
 import { useState } from "react";
 import type { MessageBubbleProps } from "../types.ts";
+import { sanitizeAssistantMessage } from "./message-sanitizer";
 
 /**
  * Simple inline markdown support.
@@ -308,9 +309,13 @@ export function MessageBubble({
     onFeedback?.(message.id, feedback);
   };
 
+  const sanitizedContent = isBot
+    ? sanitizeAssistantMessage(message.content)
+    : message.content;
+
   const { cleanText, ctaLinks, ctaTitle } = isBot
-    ? extractCtaLinks(message.content)
-    : { cleanText: message.content, ctaLinks: [], ctaTitle: null };
+    ? extractCtaLinks(sanitizedContent)
+    : { cleanText: sanitizedContent, ctaLinks: [], ctaTitle: null };
 
   return (
     <div

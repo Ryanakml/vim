@@ -363,7 +363,7 @@ export default function ConfigurationsPage() {
                     )}
                   </div>
 
-                  <div className="rounded-md border border-zinc-800 bg-zinc-900/40 p-3 text-xs text-muted-foreground space-y-2">
+                  {/* <div className="rounded-md border border-zinc-800 bg-zinc-900/40 p-3 text-xs text-muted-foreground space-y-2">
                     {kbDocsLoading ? (
                       <p className="text-xs text-muted-foreground">
                         Loading knowledge base insights...
@@ -405,11 +405,11 @@ export default function ConfigurationsPage() {
                         )}
                       </>
                     )}
-                  </div>
+                  </div> */}
                 </section>
 
                 {/* Escalation Settings - Structured Lead Capture */}
-                <section
+                {/* <section
                   data-config-selectable="true"
                   onClick={handleSelectEscalationSettings}
                   className={`rounded-xl border cursor-pointer transition-all ${
@@ -457,7 +457,7 @@ export default function ConfigurationsPage() {
                       </div>
                     </div>
                   </div>
-                </section>
+                </section> */}
 
                 {/* Knowledge Base Section */}
                 <KnowledgeBaseSection
@@ -467,13 +467,13 @@ export default function ConfigurationsPage() {
                   onSelectSection={handleSelectKnowledgeBaseSection}
                 />
 
-                <KBAnalytics
+                {/* <KBAnalytics
                   botId={botProfile?._id}
                   openDocumentEditor={(docId) => {
                     setSelectedComponent(`kb_${docId}`);
                     setSidebarTab("inspector");
                   }}
-                />
+                /> */}
               </TabsContent>
 
               {/* ===== ADVANCED TAB ===== */}

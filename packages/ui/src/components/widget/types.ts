@@ -94,6 +94,7 @@ export interface ChatMessagesProps {
   messages: Message[];
   primaryColor: string;
   botName: string;
+  botDescription?: string;
   botAvatar?: string;
   themeMode: "light" | "dark";
   cornerRadius: number;

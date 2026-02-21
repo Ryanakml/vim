@@ -127,6 +127,7 @@ export function ChatContainer({
           messages={messages}
           primaryColor={botConfig.appearance.primaryColor}
           botName={botConfig.profile.displayName}
+          botDescription={botConfig.profile.description}
           botAvatar={botConfig.profile.avatarUrl}
           themeMode={botConfig.appearance.themeMode}
           cornerRadius={botConfig.appearance.cornerRadius}
