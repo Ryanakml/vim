@@ -7,18 +7,38 @@ const nextConfig = {
         globalThis["process"]
       );
     const landingProxyOrigin =
-      nodeProcess?.env?.NEXT_PUBLIC_LANDING_PROXY_ORIGIN;
+      nodeProcess?.env?.NEXT_PUBLIC_LANDING_PROXY_ORIGIN ||
+      "https://chattiphy-landing-page.vercel.app";
 
-    if (!landingProxyOrigin) {
-      return [];
-    }
+    const normalizedLandingProxyOrigin = landingProxyOrigin.replace(/\/$/, "");
 
-    return [
-      {
-        source: "/",
-        destination: `${landingProxyOrigin}/`,
-      },
-    ];
+    return {
+      beforeFiles: [
+        {
+          source: "/",
+          destination: `${normalizedLandingProxyOrigin}/`,
+        },
+      ],
+      afterFiles: [],
+      fallback: [
+        {
+          source: "/_next/static/:path*",
+          destination: `${normalizedLandingProxyOrigin}/_next/static/:path*`,
+        },
+        {
+          source: "/images/:path*",
+          destination: `${normalizedLandingProxyOrigin}/images/:path*`,
+        },
+        {
+          source: "/assets/:path*",
+          destination: `${normalizedLandingProxyOrigin}/assets/:path*`,
+        },
+        {
+          source: "/favicon.ico",
+          destination: `${normalizedLandingProxyOrigin}/favicon.ico`,
+        },
+      ],
+    };
   },
 };
 
