@@ -20,24 +20,7 @@ const nextConfig = {
         },
       ],
       afterFiles: [],
-      fallback: [
-        {
-          source: "/_next/static/:path*",
-          destination: `${normalizedLandingProxyOrigin}/_next/static/:path*`,
-        },
-        {
-          source: "/images/:path*",
-          destination: `${normalizedLandingProxyOrigin}/images/:path*`,
-        },
-        {
-          source: "/assets/:path*",
-          destination: `${normalizedLandingProxyOrigin}/assets/:path*`,
-        },
-        {
-          source: "/favicon.ico",
-          destination: `${normalizedLandingProxyOrigin}/favicon.ico`,
-        },
-      ],
+      fallback: [],
     };
   },
 };
