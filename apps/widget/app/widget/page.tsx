@@ -39,6 +39,7 @@ function WidgetContent() {
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [isSheetExpanded, setIsSheetExpanded] = useState(false);
   const viewportBaselineRef = useRef<number | null>(null);
+  const minViewportWhileFocusedRef = useRef<number | null>(null);
   const isInputFocusedRef = useRef(false);
 
   const blurActiveInput = useCallback(() => {
@@ -51,21 +52,24 @@ function WidgetContent() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const mediaQuery = window.matchMedia("(max-width: 480px)");
-    const handleChange = (event: MediaQueryListEvent) => {
-      setIsMobileViewport(event.matches);
-      if (!event.matches) {
-        setIsSheetExpanded(false);
-        isInputFocusedRef.current = false;
-      }
-    };
+    const isMobileUserAgent =
+      /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+        navigator.userAgent,
+      );
+    const isIPadOSDesktopUA =
+      navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1;
+    const hasCoarseTouchPointer =
+      window.matchMedia("(pointer: coarse)").matches &&
+      navigator.maxTouchPoints > 0;
 
-    setIsMobileViewport(mediaQuery.matches);
-    mediaQuery.addEventListener("change", handleChange);
+    const isRealMobileDevice =
+      isMobileUserAgent || isIPadOSDesktopUA || hasCoarseTouchPointer;
 
-    return () => {
-      mediaQuery.removeEventListener("change", handleChange);
-    };
+    setIsMobileViewport(isRealMobileDevice);
+    if (!isRealMobileDevice) {
+      setIsSheetExpanded(false);
+      isInputFocusedRef.current = false;
+    }
   }, []);
 
   const closeWidget = useCallback(() => {
@@ -91,16 +95,15 @@ function WidgetContent() {
 
       if (window.visualViewport) {
         const currentHeight = window.visualViewport.height;
-        viewportBaselineRef.current = Math.max(
-          viewportBaselineRef.current ?? 0,
-          currentHeight,
-        );
+        viewportBaselineRef.current = currentHeight;
+        minViewportWhileFocusedRef.current = currentHeight;
       }
     }
   }, [isMobileViewport]);
 
   const handleInputBlur = useCallback(() => {
     isInputFocusedRef.current = false;
+    minViewportWhileFocusedRef.current = null;
     if (isMobileViewport) {
       setIsSheetExpanded(false);
     }
@@ -109,6 +112,7 @@ function WidgetContent() {
   const handleMessagesInteract = useCallback(() => {
     if (!isMobileViewport) return;
     isInputFocusedRef.current = false;
+    minViewportWhileFocusedRef.current = null;
     blurActiveInput();
     setIsSheetExpanded(false);
   }, [blurActiveInput, isMobileViewport]);
@@ -132,18 +136,27 @@ function WidgetContent() {
           viewportBaselineRef.current ?? 0,
           currentHeight,
         );
+        minViewportWhileFocusedRef.current = null;
         return;
       }
 
       const baselineHeight =
         viewportBaselineRef.current ??
         Math.max(window.innerHeight, currentHeight);
-      const collapseThreshold = baselineHeight - 80;
+      minViewportWhileFocusedRef.current =
+        minViewportWhileFocusedRef.current == null
+          ? currentHeight
+          : Math.min(minViewportWhileFocusedRef.current, currentHeight);
 
-      if (currentHeight >= collapseThreshold) {
+      const keyboardWasOpen =
+        (minViewportWhileFocusedRef.current ?? baselineHeight) <=
+        baselineHeight - 120;
+      const keyboardCollapsed = currentHeight >= baselineHeight - 40;
+
+      if (keyboardWasOpen && keyboardCollapsed) {
         isInputFocusedRef.current = false;
+        minViewportWhileFocusedRef.current = null;
         setIsSheetExpanded(false);
-        blurActiveInput();
       }
     };
 
