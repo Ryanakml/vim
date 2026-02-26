@@ -186,6 +186,7 @@ export const insertBotProfile = mutation({
     embed_token: v.optional(v.string()),
     embed_token_created_at: v.optional(v.number()),
     embed_token_domain: v.optional(v.string()),
+    is_active: v.optional(v.boolean()),
     created_at: v.optional(v.number()),
     updated_at: v.optional(v.number()),
   },
@@ -209,6 +210,7 @@ export const insertBotProfile = mutation({
       enable_file_upload: args.enable_file_upload ?? false,
       enable_sound: args.enable_sound ?? false,
       history_reset: args.history_reset ?? "never",
+      is_active: args.is_active ?? true,
       model_provider:
         args.model_provider === undefined
           ? DEFAULT_MODEL_PROVIDER

@@ -30,6 +30,7 @@ export interface BotFeatures {
 export interface BotConfig {
   id: string;
   organizationId: string;
+  isActive?: boolean;
   profile: BotProfile;
   appearance: BotAppearance;
   features: BotFeatures;

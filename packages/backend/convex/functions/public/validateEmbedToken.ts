@@ -27,6 +27,7 @@ export const validateEmbedToken = query({
     return {
       id: botProfile._id,
       organizationId: botProfile.organization_id,
+      isActive: botProfile.is_active ?? true,
       profile: {
         displayName: botProfile.bot_names,
         description: botProfile.bot_description,

@@ -7,6 +7,7 @@ import { Input } from "@workspace/ui/components/input";
 import { Switch } from "@workspace/ui/components/switch";
 import { cn } from "@workspace/ui/lib/utils";
 import { useBotProfile, useGenerateEmbedToken } from "@/lib/convex-client";
+import { WidgetVisibilityToggle } from "@/components/webchat/widget-visibility-toggle";
 
 const DEFAULT_WIDGET_URL =
   process.env.NEXT_PUBLIC_WIDGET_URL ??
@@ -107,6 +108,8 @@ export default function DeploySettingsPage() {
       </div>
 
       <div className="mt-12 space-y-12">
+        <WidgetVisibilityToggle />
+
         {/* --- 1. EMBED CODE --- */}
         <div className="space-y-4">
           <div className="flex flex-col gap-1">

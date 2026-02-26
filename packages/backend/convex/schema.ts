@@ -49,6 +49,7 @@ export default defineSchema({
     embed_token: v.optional(v.string()), // Token for embed script deployment
     embed_token_created_at: v.optional(v.number()), // Timestamp when embed token was created
     embed_token_domain: v.optional(v.string()), // Domain where embed token is deployed
+    is_active: v.optional(v.boolean()), // Remote kill switch for widget visibility
 
     // Metadata
     created_at: v.number(),

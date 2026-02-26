@@ -459,7 +459,6 @@ interface BotProfileResponse {
     if (initialPrimaryColorAttr) {
       currentPrimaryColor = initialPrimaryColorAttr;
       button.style.setProperty("background", currentPrimaryColor, "important");
-      showLauncher();
     }
 
     const initialCornerRadius = parseCornerRadius(initialCornerRadiusAttr);
@@ -508,6 +507,12 @@ interface BotProfileResponse {
       // Handle widget close request (from header X button)
       if (data.type === "widget:close") {
         closeWidget();
+      }
+
+      // Handle inactive widget (remote kill switch)
+      if (data.type === "widget:inactive") {
+        closeWidget();
+        hideLauncher();
       }
 
       // Handle widget ready with bot config (apply dynamic color)

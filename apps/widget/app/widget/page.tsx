@@ -2,8 +2,7 @@
 
 import { Suspense, useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
-import { AnimatePresence, motion, type PanInfo } from "framer-motion";
-import { X } from "lucide-react";
+import { motion, type PanInfo } from "framer-motion";
 import {
   ChatContainer,
   type BotConfig,
@@ -18,6 +17,7 @@ import {
   notifyError,
   notifyConfig,
   notifyClose,
+  notifyInactive,
 } from "@/lib/postmessage-bridge";
 
 function WidgetContent() {
@@ -35,26 +35,18 @@ function WidgetContent() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [hydratedTheme, setHydratedTheme] = useState<string | null>(null);
   const [isOnline, setIsOnline] = useState(false);
+  const [isWidgetActive, setIsWidgetActive] = useState<boolean | null>(null);
   const [isMobileViewport, setIsMobileViewport] = useState(false);
   const [isSheetExpanded, setIsSheetExpanded] = useState(false);
-  const [isSheetVisible, setIsSheetVisible] = useState(true);
+  const viewportBaselineRef = useRef<number | null>(null);
+  const isInputFocusedRef = useRef(false);
 
-  const closeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const clearCloseTimeout = useCallback(() => {
-    const timeout = closeTimeoutRef.current;
-    if (timeout) {
-      clearTimeout(timeout);
-      closeTimeoutRef.current = null;
+  const blurActiveInput = useCallback(() => {
+    const activeElement = document.activeElement;
+    if (activeElement instanceof HTMLElement) {
+      activeElement.blur();
     }
   }, []);
-
-  useEffect(
-    () => () => {
-      clearCloseTimeout();
-    },
-    [clearCloseTimeout],
-  );
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -63,8 +55,8 @@ function WidgetContent() {
     const handleChange = (event: MediaQueryListEvent) => {
       setIsMobileViewport(event.matches);
       if (!event.matches) {
-        setIsSheetVisible(true);
         setIsSheetExpanded(false);
+        isInputFocusedRef.current = false;
       }
     };
 
@@ -77,19 +69,11 @@ function WidgetContent() {
   }, []);
 
   const closeWidget = useCallback(() => {
-    if (!isMobileViewport) {
-      notifyClose();
-      return;
-    }
-
+    blurActiveInput();
+    isInputFocusedRef.current = false;
     setIsSheetExpanded(false);
-    setIsSheetVisible(false);
-    clearCloseTimeout();
-    const timeout = setTimeout(() => {
-      notifyClose();
-    }, 220);
-    closeTimeoutRef.current = timeout;
-  }, [clearCloseTimeout, isMobileViewport]);
+    notifyClose();
+  }, [blurActiveInput]);
 
   const handleSheetDragEnd = useCallback(
     (_: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
@@ -102,11 +86,21 @@ function WidgetContent() {
 
   const handleInputFocus = useCallback(() => {
     if (isMobileViewport) {
+      isInputFocusedRef.current = true;
       setIsSheetExpanded(true);
+
+      if (window.visualViewport) {
+        const currentHeight = window.visualViewport.height;
+        viewportBaselineRef.current = Math.max(
+          viewportBaselineRef.current ?? 0,
+          currentHeight,
+        );
+      }
     }
   }, [isMobileViewport]);
 
   const handleInputBlur = useCallback(() => {
+    isInputFocusedRef.current = false;
     if (isMobileViewport) {
       setIsSheetExpanded(false);
     }
@@ -114,12 +108,50 @@ function WidgetContent() {
 
   const handleMessagesInteract = useCallback(() => {
     if (!isMobileViewport) return;
-    const activeElement = document.activeElement;
-    if (activeElement instanceof HTMLElement) {
-      activeElement.blur();
-    }
+    isInputFocusedRef.current = false;
+    blurActiveInput();
     setIsSheetExpanded(false);
-  }, [isMobileViewport]);
+  }, [blurActiveInput, isMobileViewport]);
+
+  useEffect(() => {
+    if (!isMobileViewport || typeof window === "undefined") return;
+
+    const viewport = window.visualViewport;
+    if (!viewport) return;
+
+    viewportBaselineRef.current = Math.max(
+      viewportBaselineRef.current ?? 0,
+      viewport.height,
+    );
+
+    const handleViewportResize = () => {
+      const currentHeight = viewport.height;
+
+      if (!isInputFocusedRef.current) {
+        viewportBaselineRef.current = Math.max(
+          viewportBaselineRef.current ?? 0,
+          currentHeight,
+        );
+        return;
+      }
+
+      const baselineHeight =
+        viewportBaselineRef.current ??
+        Math.max(window.innerHeight, currentHeight);
+      const collapseThreshold = baselineHeight - 80;
+
+      if (currentHeight >= collapseThreshold) {
+        isInputFocusedRef.current = false;
+        setIsSheetExpanded(false);
+        blurActiveInput();
+      }
+    };
+
+    viewport.addEventListener("resize", handleViewportResize);
+    return () => {
+      viewport.removeEventListener("resize", handleViewportResize);
+    };
+  }, [blurActiveInput, isMobileViewport]);
 
   useEffect(() => {
     try {
@@ -177,6 +209,14 @@ function WidgetContent() {
 
     if (config) {
       const botConfigData = config as BotConfig;
+      const active = botConfigData.isActive ?? true;
+      setIsWidgetActive(active);
+      if (!active) {
+        setBotConfig(null);
+        notifyInactive();
+        return;
+      }
+
       setBotConfig(botConfigData);
       setIsOnline(true); // API key is configured, bot is online
 
@@ -192,6 +232,10 @@ function WidgetContent() {
       );
     }
   }, [token, config, hydratedTheme]);
+
+  if (isWidgetActive === false) {
+    return null;
+  }
 
   // Sync messages from subscription
   useEffect(() => {
@@ -404,53 +448,39 @@ function WidgetContent() {
       className={botConfig.appearance.themeMode === "dark" ? "dark" : ""}
       style={{ height: "100%", width: "100%" }}
     >
-      <AnimatePresence>
-        {isSheetVisible && (
-          <motion.div
-            className="fixed inset-0 z-50"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.2 }}
-          >
-            <motion.button
-              type="button"
-              className="absolute inset-0 bg-black/50"
-              aria-label="Close chat widget"
-              onClick={closeWidget}
-            />
+      <motion.div
+        className="fixed inset-0 z-50"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ duration: 0.2 }}
+      >
+        <button
+          type="button"
+          className="absolute inset-0 bg-transparent"
+          aria-label="Close chat widget"
+          onClick={closeWidget}
+        />
 
-            <motion.div
-              className="absolute inset-x-0 bottom-0 z-10 overflow-hidden rounded-t-2xl bg-transparent"
-              initial={{ y: "100%", height: "75dvh" }}
-              animate={{ y: 0, height: isSheetExpanded ? "100dvh" : "75dvh" }}
-              exit={{ y: "100%", height: "75dvh" }}
-              transition={{ type: "spring", damping: 28, stiffness: 320 }}
-              drag="y"
-              dragDirectionLock
-              dragConstraints={{ top: 0, bottom: 0 }}
-              dragElastic={{ top: 0, bottom: 0.28 }}
-              onDragEnd={handleSheetDragEnd}
-            >
-              <div className="relative flex h-full w-full flex-col pt-3">
-                <div className="pointer-events-none absolute left-1/2 top-2 z-30 h-1.5 w-10 -translate-x-1/2 rounded-full bg-zinc-400/70" />
-                <button
-                  type="button"
-                  onClick={closeWidget}
-                  aria-label="Close chat widget"
-                  className="absolute right-3 top-3 z-30 flex h-9 w-9 items-center justify-center rounded-full bg-black/40 text-white"
-                >
-                  <X className="h-5 w-5" />
-                </button>
+        <motion.div
+          className="absolute inset-x-0 bottom-0 z-10 overflow-hidden rounded-t-2xl bg-transparent"
+          initial={{ y: "100%", height: "75dvh" }}
+          animate={{ y: 0, height: isSheetExpanded ? "100dvh" : "75dvh" }}
+          transition={{ type: "spring", damping: 28, stiffness: 320 }}
+          drag="y"
+          dragDirectionLock
+          dragConstraints={{ top: 0, bottom: 0 }}
+          dragElastic={{ top: 0, bottom: 0.28 }}
+          onDragEnd={handleSheetDragEnd}
+        >
+          <div className="relative flex h-full w-full flex-col pt-3">
+            <div className="pointer-events-none absolute left-1/2 top-2 z-30 h-1.5 w-10 -translate-x-1/2 rounded-full bg-zinc-400/70" />
 
-                <div className="h-full overflow-hidden rounded-t-2xl">
-                  {baseChat}
-                </div>
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            <div className="h-full overflow-hidden rounded-t-2xl">
+              {baseChat}
+            </div>
+          </div>
+        </motion.div>
+      </motion.div>
     </div>
   );
 }

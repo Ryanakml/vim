@@ -66,6 +66,55 @@ export const migrateUserIdForBotProfiles = mutation({
   },
 });
 
+/**
+ * Migration: Backfill botProfiles.is_active with default true
+ */
+export const migrateBotProfilesIsActiveDefaultTrue = mutation({
+  handler: async (ctx) => {
+    const profiles = await ctx.db.query("botProfiles").collect();
+    let updatedCount = 0;
+    let skippedCount = 0;
+    let errorCount = 0;
+
+    for (const profile of profiles) {
+      try {
+        if (profile.is_active !== undefined) {
+          skippedCount++;
+          continue;
+        }
+
+        await ctx.db.patch(profile._id, { is_active: true });
+        updatedCount++;
+      } catch (error) {
+        errorCount++;
+        console.error(
+          `Failed to backfill is_active for ${profile._id}:`,
+          error,
+        );
+      }
+    }
+
+    await logAudit(ctx, {
+      user_id: "system:migration",
+      action: "migrate_bot_profiles_is_active_default_true",
+      resource_type: "migration",
+      status: "success",
+      changes: {
+        before: null,
+        after: { updatedCount, skippedCount, errorCount },
+      },
+    });
+
+    return {
+      success: true,
+      message: `Bot profiles is_active backfill: Updated ${updatedCount}, Skipped ${skippedCount}, Errors ${errorCount}`,
+      updatedCount,
+      skippedCount,
+      errorCount,
+    };
+  },
+});
+
 // ===== CONVERSATIONS & MESSAGES =====
 
 /**

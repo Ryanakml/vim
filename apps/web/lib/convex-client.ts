@@ -55,6 +55,27 @@ export function useGenerateEmbedToken() {
   return useMutation(api.embedTokens.generateEmbedToken);
 }
 
+export function useWidgetConfig(widgetId?: Id<"botProfiles"> | "skip") {
+  return useQuery(
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (api as any).webchat.getWidgetConfig,
+    widgetId && widgetId !== "skip" ? { widgetId } : "skip",
+  ) as
+    | {
+        widgetId: Id<"botProfiles">;
+        isActive: boolean;
+        updatedAt: number;
+      }
+    | undefined;
+}
+
+export function useToggleWidgetActive() {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return useMutation((api as any).webchat.toggleWidgetActive) as (args: {
+    widgetId: Id<"botProfiles">;
+  }) => Promise<{ widgetId: Id<"botProfiles">; isActive: boolean }>;
+}
+
 // ===== CONFIGURATION HOOKS =====
 
 /**

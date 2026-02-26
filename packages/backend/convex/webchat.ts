@@ -28,6 +28,7 @@ export const getBotProfile = query({
         const hasApiKey = Boolean(profile.api_key);
         return {
           ...profile,
+          is_active: profile.is_active ?? true,
           api_key: null,
           has_api_key: hasApiKey,
         };
@@ -111,6 +112,7 @@ export const ensureBotProfile = mutation({
         enable_file_upload: false,
         enable_sound: false,
         history_reset: "never",
+        is_active: true,
         escalation: {
           enabled: false,
           whatsapp: "",
@@ -170,6 +172,7 @@ export const updateBotProfile = mutation({
     enable_file_upload: v.optional(v.boolean()),
     enable_sound: v.optional(v.boolean()),
     history_reset: v.optional(v.string()),
+    is_active: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     // ✅ Verify user is authenticated
@@ -276,6 +279,7 @@ export const getBotProfiles = query({
 
     return profiles.map((profile) => ({
       ...profile,
+      is_active: profile.is_active ?? true,
       api_key: null,
       has_api_key: Boolean(profile.api_key),
     }));
@@ -326,6 +330,7 @@ export const updateBotProfiles = mutation({
         enable_file_upload: false,
         enable_sound: false,
         history_reset: "never",
+        is_active: true,
         escalation: {
           enabled: false,
           whatsapp: "",
@@ -363,5 +368,66 @@ export const updateBotProfiles = mutation({
       }
       throw error;
     }
+  },
+});
+
+// Dashboard widget configuration query by widget ID
+export const getWidgetConfig = query({
+  args: {
+    widgetId: v.id("botProfiles"),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthorized: Must be logged in");
+    }
+
+    const profile = await ctx.db.get(args.widgetId);
+    if (!profile) {
+      throw new Error("Widget not found");
+    }
+
+    if (profile.user_id !== identity.subject) {
+      throw new Error("Unauthorized: Cannot access other user's widget");
+    }
+
+    return {
+      widgetId: profile._id,
+      isActive: profile.is_active ?? true,
+      updatedAt: profile.updated_at,
+    };
+  },
+});
+
+// Dashboard kill switch mutation (toggle visibility)
+export const toggleWidgetActive = mutation({
+  args: {
+    widgetId: v.id("botProfiles"),
+  },
+  handler: async (ctx, args) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("Unauthorized: Must be logged in");
+    }
+
+    const profile = await ctx.db.get(args.widgetId);
+    if (!profile) {
+      throw new Error("Widget not found");
+    }
+
+    if (profile.user_id !== identity.subject) {
+      throw new Error("Unauthorized: Cannot update other user's widget");
+    }
+
+    const nextIsActive = !(profile.is_active ?? true);
+    await ctx.db.patch(args.widgetId, {
+      is_active: nextIsActive,
+      updated_at: Date.now(),
+    });
+
+    return {
+      widgetId: profile._id,
+      isActive: nextIsActive,
+    };
   },
 });

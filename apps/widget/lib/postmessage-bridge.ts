@@ -7,6 +7,9 @@ export type WidgetMessage =
       type: "widget:close";
     }
   | {
+      type: "widget:inactive";
+    }
+  | {
       type: "widget:error";
       data: { message: string };
     }
@@ -47,6 +50,10 @@ export function notifyConfig(primaryColor: string, cornerRadius?: number) {
 
 export function notifyClose() {
   sendToParent({ type: "widget:close" });
+}
+
+export function notifyInactive() {
+  sendToParent({ type: "widget:inactive" });
 }
 
 export function notifyError(message: string) {
