@@ -36,6 +36,9 @@ export function ChatContainer({
   onRefresh,
   onFeedback,
   onLeadClick,
+  onInputFocus,
+  onInputBlur,
+  onMessagesInteract,
   className,
   isOnline = true,
 }: ChatContainerProps) {
@@ -139,6 +142,7 @@ export function ChatContainer({
           error={error}
           onFeedback={onFeedback}
           onLeadClick={onLeadClick}
+          onInteract={onMessagesInteract}
         />
 
         {/* Input */}
@@ -153,6 +157,8 @@ export function ChatContainer({
           onSendMessage={handleSend}
           value={input}
           onChange={setInput}
+          onFocus={onInputFocus}
+          onBlur={onInputBlur}
           onCancel={() => {
             // Handle cancel if needed
           }}

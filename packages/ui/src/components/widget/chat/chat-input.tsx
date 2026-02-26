@@ -23,6 +23,8 @@ export function ChatInput({
   onCancel,
   value,
   onChange,
+  onFocus,
+  onBlur,
 }: ChatInputProps) {
   const formRef = useRef<HTMLFormElement>(null);
 
@@ -90,11 +92,13 @@ export function ChatInput({
           }}
           onFocus={(e) => {
             e.currentTarget.style.borderColor = primaryColor;
+            onFocus?.();
           }}
           onBlur={(e) => {
             e.currentTarget.style.borderColor = hasInput
               ? primaryColor
               : inputBorderColor;
+            onBlur?.();
           }}
           disabled={isLoading || isStreaming}
         />

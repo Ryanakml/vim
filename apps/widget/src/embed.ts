@@ -304,7 +304,7 @@ interface BotProfileResponse {
         display: flex !important;
         align-items: center !important;
         justify-content: center !important;
-        transition: transform 0.2s ease !important;
+        transition: transform 0.2s ease, top 0.2s ease, bottom 0.2s ease, left 0.2s ease, right 0.2s ease !important;
         color: white !important;
         outline: none !important;
         -webkit-tap-highlight-color: transparent !important;
@@ -388,6 +388,10 @@ interface BotProfileResponse {
 
         #chatify-button.active {
           z-index: 9999999 !important;
+          top: 16px !important;
+          right: 16px !important;
+          bottom: auto !important;
+          left: auto !important;
         }
       }
     `;

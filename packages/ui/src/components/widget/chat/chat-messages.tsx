@@ -34,6 +34,7 @@ export function ChatMessages({
   error,
   onFeedback,
   onLeadClick,
+  onInteract,
 }: ChatMessagesProps) {
   const sanitizedStreamingContent = streamingContent
     ? sanitizeAssistantMessage(streamingContent)
@@ -70,6 +71,7 @@ export function ChatMessages({
         "flex-1 overflow-hidden w-full relative h-0",
         contentSubBgColor,
       )}
+      onPointerDown={onInteract}
     >
       <ScrollArea className={cn("h-full w-full relative", contentSubBgColor)}>
         <div className="flex flex-col gap-6 p-5">

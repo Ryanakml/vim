@@ -12,13 +12,14 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "next": "^16.0.0",
-    "convex": "^1.0.0",
     "@workspace/ui": "workspace:*",
+    "convex": "^1.0.0",
+    "framer-motion": "^12.34.3",
     "lucide-react": "^0.263.0",
-    "next-themes": "^0.2.1"
+    "next": "^16.0.0",
+    "next-themes": "^0.2.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",
@@ -28,7 +29,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "tailwindcss": "^4",
-    "typescript": "^5",
-    "tsup": "^8.0.0"
+    "tsup": "^8.0.0",
+    "typescript": "^5"
   }
 }

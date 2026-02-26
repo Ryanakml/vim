@@ -1,7 +1,9 @@
 "use client";
 
-import { Suspense, useEffect, useState, useCallback } from "react";
+import { Suspense, useEffect, useState, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
+import { AnimatePresence, motion, type PanInfo } from "framer-motion";
+import { X } from "lucide-react";
 import {
   ChatContainer,
   type BotConfig,
@@ -15,6 +17,7 @@ import {
   notifyReady,
   notifyError,
   notifyConfig,
+  notifyClose,
 } from "@/lib/postmessage-bridge";
 
 function WidgetContent() {
@@ -32,6 +35,91 @@ function WidgetContent() {
   const [isStreaming, setIsStreaming] = useState(false);
   const [hydratedTheme, setHydratedTheme] = useState<string | null>(null);
   const [isOnline, setIsOnline] = useState(false);
+  const [isMobileViewport, setIsMobileViewport] = useState(false);
+  const [isSheetExpanded, setIsSheetExpanded] = useState(false);
+  const [isSheetVisible, setIsSheetVisible] = useState(true);
+
+  const closeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const clearCloseTimeout = useCallback(() => {
+    const timeout = closeTimeoutRef.current;
+    if (timeout) {
+      clearTimeout(timeout);
+      closeTimeoutRef.current = null;
+    }
+  }, []);
+
+  useEffect(
+    () => () => {
+      clearCloseTimeout();
+    },
+    [clearCloseTimeout],
+  );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const mediaQuery = window.matchMedia("(max-width: 480px)");
+    const handleChange = (event: MediaQueryListEvent) => {
+      setIsMobileViewport(event.matches);
+      if (!event.matches) {
+        setIsSheetVisible(true);
+        setIsSheetExpanded(false);
+      }
+    };
+
+    setIsMobileViewport(mediaQuery.matches);
+    mediaQuery.addEventListener("change", handleChange);
+
+    return () => {
+      mediaQuery.removeEventListener("change", handleChange);
+    };
+  }, []);
+
+  const closeWidget = useCallback(() => {
+    if (!isMobileViewport) {
+      notifyClose();
+      return;
+    }
+
+    setIsSheetExpanded(false);
+    setIsSheetVisible(false);
+    clearCloseTimeout();
+    const timeout = setTimeout(() => {
+      notifyClose();
+    }, 220);
+    closeTimeoutRef.current = timeout;
+  }, [clearCloseTimeout, isMobileViewport]);
+
+  const handleSheetDragEnd = useCallback(
+    (_: MouseEvent | TouchEvent | PointerEvent, info: PanInfo) => {
+      if (info.offset.y > 120 || info.velocity.y > 700) {
+        closeWidget();
+      }
+    },
+    [closeWidget],
+  );
+
+  const handleInputFocus = useCallback(() => {
+    if (isMobileViewport) {
+      setIsSheetExpanded(true);
+    }
+  }, [isMobileViewport]);
+
+  const handleInputBlur = useCallback(() => {
+    if (isMobileViewport) {
+      setIsSheetExpanded(false);
+    }
+  }, [isMobileViewport]);
+
+  const handleMessagesInteract = useCallback(() => {
+    if (!isMobileViewport) return;
+    const activeElement = document.activeElement;
+    if (activeElement instanceof HTMLElement) {
+      activeElement.blur();
+    }
+    setIsSheetExpanded(false);
+  }, [isMobileViewport]);
 
   useEffect(() => {
     try {
@@ -281,7 +369,7 @@ function WidgetContent() {
     );
   }
 
-  return (
+  const baseChat = (
     <div
       suppressHydrationWarning
       className={botConfig.appearance.themeMode === "dark" ? "dark" : ""}
@@ -298,8 +386,71 @@ function WidgetContent() {
         onSendMessage={handleSendMessage}
         onLeadClick={handleLeadClick}
         onRefresh={handleRefresh}
+        onInputFocus={handleInputFocus}
+        onInputBlur={handleInputBlur}
+        onMessagesInteract={handleMessagesInteract}
         isOnline={isOnline}
       />
+    </div>
+  );
+
+  if (!isMobileViewport) {
+    return baseChat;
+  }
+
+  return (
+    <div
+      suppressHydrationWarning
+      className={botConfig.appearance.themeMode === "dark" ? "dark" : ""}
+      style={{ height: "100%", width: "100%" }}
+    >
+      <AnimatePresence>
+        {isSheetVisible && (
+          <motion.div
+            className="fixed inset-0 z-50"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.2 }}
+          >
+            <motion.button
+              type="button"
+              className="absolute inset-0 bg-black/50"
+              aria-label="Close chat widget"
+              onClick={closeWidget}
+            />
+
+            <motion.div
+              className="absolute inset-x-0 bottom-0 z-10 overflow-hidden rounded-t-2xl bg-transparent"
+              initial={{ y: "100%", height: "75dvh" }}
+              animate={{ y: 0, height: isSheetExpanded ? "100dvh" : "75dvh" }}
+              exit={{ y: "100%", height: "75dvh" }}
+              transition={{ type: "spring", damping: 28, stiffness: 320 }}
+              drag="y"
+              dragDirectionLock
+              dragConstraints={{ top: 0, bottom: 0 }}
+              dragElastic={{ top: 0, bottom: 0.28 }}
+              onDragEnd={handleSheetDragEnd}
+            >
+              <div className="relative flex h-full w-full flex-col pt-3">
+                <div className="pointer-events-none absolute left-1/2 top-2 z-30 h-1.5 w-10 -translate-x-1/2 rounded-full bg-zinc-400/70" />
+                <button
+                  type="button"
+                  onClick={closeWidget}
+                  aria-label="Close chat widget"
+                  className="absolute right-3 top-3 z-30 flex h-9 w-9 items-center justify-center rounded-full bg-black/40 text-white"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+
+                <div className="h-full overflow-hidden rounded-t-2xl">
+                  {baseChat}
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

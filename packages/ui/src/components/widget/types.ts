@@ -73,6 +73,9 @@ export interface ChatContainerProps {
     feedback: "helpful" | "not-helpful",
   ) => Promise<void>;
   onLeadClick?: (payload: LeadClickPayload) => void | Promise<void>;
+  onInputFocus?: () => void;
+  onInputBlur?: () => void;
+  onMessagesInteract?: () => void;
   className?: string;
   isOnline?: boolean;
 }
@@ -107,6 +110,7 @@ export interface ChatMessagesProps {
   error?: Error | null;
   onFeedback?: (messageId: string, feedback: "helpful" | "not-helpful") => void;
   onLeadClick?: (payload: LeadClickPayload) => void;
+  onInteract?: () => void;
 }
 
 export interface ChatInputProps {
@@ -121,6 +125,8 @@ export interface ChatInputProps {
   onCancel?: () => void;
   value: string;
   onChange: (value: string) => void;
+  onFocus?: () => void;
+  onBlur?: () => void;
 }
 
 export interface MessageBubbleProps {

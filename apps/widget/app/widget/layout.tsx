@@ -4,8 +4,6 @@ export default function WidgetLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="h-screen w-screen flex bg-transparent">
-      {children}
-    </div>
+    <div className="flex h-[100dvh] w-screen bg-transparent">{children}</div>
   );
 }
